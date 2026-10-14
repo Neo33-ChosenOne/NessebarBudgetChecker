@@ -1,0 +1,200 @@
+{# ---------------------------------------------------------------------
+   Shared UI macros. Every number goes through the `num` / `eur` / `pct`
+   filters (comma thousands separators, no decimals for amounts).
+   --------------------------------------------------------------------- #}
+
+{# Page header: small uppercase eyebrow, large title, one muted sentence. #}
+{% macro page_head(eyebrow, title, back_href="", back_label="") %}
+<header class="page-head">
+  {% if back_href %}
+  <a class="page-head__back" href="{{ back_href }}"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 2.5 4 6l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ back_label }}</a>
+  {% elif eyebrow %}
+  <p class="eyebrow">{{ eyebrow }}</p>
+  {% endif %}
+  <h1 class="page-head__title">{{ title }}</h1>
+  {% if caller %}<div class="page-head__sub">{{ caller() }}</div>{% endif %}
+</header>
+{% endmacro %}
+
+{# Big tile figure: comma-grouped number with a smaller muted unit. #}
+{% macro figure(value, unit="€") -%}
+<span class="figure">{{ value | num }}{% if unit %}<span class="figure__unit">{{ unit }}</span>{% endif %}</span>
+{%- endmacro %}
+
+{# Thin progress/meter bar; `fraction` is 0..1 (clamped for display). #}
+{% macro meter(fraction, tone="accent", label="") -%}
+{%- set f = fraction if fraction is not none else 0 -%}
+{%- set w = [[f * 100, 0] | max, 100] | min -%}
+<span class="meter{% if tone != 'accent' %} meter--{{ tone }}{% endif %}"{% if label %} role="img" aria-label="{{ label }}"{% endif %}><span class="meter__fill" style="width: {{ '%.2f' | format(w) }}%"></span></span>
+{%- endmacro %}
+
+{# Severity as a subtle chip: coloured dot + text, never a filled badge. #}
+{% macro sev_chip(severity) -%}
+{%- set key = severity | sevkey -%}
+<span class="chip chip--plain"><span class="dot dot--{{ key }}" aria-hidden="true"></span>{{ severity | sevlabel }}</span>
+{%- endmacro %}
+
+{% macro sev_dot(severity) -%}
+{%- set key = severity | sevkey -%}
+<span class="dot dot--{{ key }}" role="img" aria-label="Тежест: {{ severity | sevlabel }}" title="Тежест: {{ severity | sevlabel }}"></span>
+{%- endmacro %}
+
+{# Neutral chip (procedure type, rule label, status). #}
+{% macro chip(text, tone="neutral") -%}
+<span class="chip"><span class="dot dot--{{ tone }}" aria-hidden="true"></span>{{ text }}</span>
+{%- endmacro %}
+
+{% macro chevron() -%}
+<svg class="chevron" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M5.25 3.5 8.75 7l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+{%- endmacro %}
+
+{# One compact flag row (home page, contract detail, budget period pages).
+   The whole row links to the flagged subject when known, otherwise to the
+   flag's own permalink page (flags/<id>.html). #}
+{% macro flag_row(f, root) -%}
+{%- set href = (root ~ (f.subject_href | sitepath)) if f.subject_href else (root ~ (f.permalink_href | sitepath)) -%}
+<li>
+  <a class="issue" href="{{ href }}">
+    <span class="issue__sev">{{ sev_dot(f.severity) }}</span>
+    <span class="issue__rule"><span class="issue__chips">{{ chip(f.tier_label, f.tier_key) }}<span class="chip">{{ f.rule_label }}</span></span></span>
+    <span class="issue__msg">{{ f.message }}</span>
+    <time class="issue__date">{{ f.created_at | bgdate }}</time>
+    <span class="issue__chev">{{ chevron() }}</span>
+  </a>
+</li>
+{%- endmacro %}
+
+{# Small "opens another site" arrow, after external source links. #}
+{% macro ext_icon() -%}
+<svg class="source__ext" width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5h5v5M9.25 2.75 3 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+{%- endmacro %}
+
+{# Provenance ("Източници") of one flag: a native <details>, closed by
+   default, listing every published file/record the flag's numbers come
+   from -- link, file name, "лист X, ред Y", the fields with their raw and
+   EUR values, a note -- then a one-sentence "Как да проверите".
+   `f` is a `_flag_view()` dict; renders nothing for a flag without sources. #}
+{% macro sources_box(f, root, summary="Източници") -%}
+{% if f.sources %}
+<details class="sources">
+  <summary class="sources__summary">{{ chevron() }}<span>{{ summary }}</span><span class="sources__count">{{ f.sources | length }}</span></summary>
+  <div class="sources__body">
+    {% if f.sources_has_bgn %}<p class="sources__fx">{{ sources_bgn_note }}</p>{% endif %}
+    <ol class="sources__list">
+      {% for s in f.sources %}
+      <li class="source">
+        <div class="source__head">
+          {% if s.href %}
+          <a class="source__link" href="{{ s.href if s.external else root ~ s.href }}"{% if s.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ s.label }}{% if s.external %}{{ ext_icon() }}{% endif %}</a>
+          {% else %}
+          <span class="source__link source__link--plain">{{ s.label }}</span>
+          {% endif %}
+          {% if s.file %}<span class="source__file">{{ s.file }}</span>{% endif %}
+        </div>
+        {% if s.object_name %}<p class="source__objname">Обект: <strong>{{ s.object_name }}</strong> — търсете този ред по името на обекта (ред {{ s.row }}), не по параграфа.</p>{% endif %}
+        {% if s.kind == "flag" and s.rule %}<p class="source__loc">Сигнал на този сайт: {{ rule_labels.get(s.rule, s.rule) }}</p>{% endif %}
+        {% if s.location %}<p class="source__loc">{{ s.location }}</p>{% endif %}
+        {% if s.fields %}
+        <table class="source__fields">
+          <thead><tr><th scope="col">Поле</th><th scope="col"{% if s.all_numeric %} class="num"{% endif %}>В източника</th>{% if s.has_eur %}<th scope="col" class="num">В евро</th>{% endif %}</tr></thead>
+          <tbody>
+            {% for fld in s.fields %}
+            <tr>
+              <td>{{ fld.name }}{% if fld.key %}<span class="source__key">{{ fld.key }}</span>{% endif %}</td>
+              <td{% if fld.numeric %} class="num"{% endif %}>{{ fld.raw }}</td>
+              {% if s.has_eur %}<td class="num">{{ fld.eur or "—" }}</td>{% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+        {% if s.note %}<p class="source__note">{{ s.note }}</p>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+    <div class="sources__how">
+      <strong>Как да проверите:</strong>
+      {% if f.sources_how_to_steps | length > 1 %}
+      <ol class="sources__how-steps">
+        {% for step in f.sources_how_to_steps %}<li>{{ step }}</li>{% endfor %}
+      </ol>
+      {% else %}
+      {{ f.sources_how_to_steps[0] }}
+      {% endif %}
+    </div>
+  </div>
+</details>
+{% endif %}
+{%- endmacro %}
+
+{# Tier as a subtle chip: coloured dot + text ("Нарушение"/"Сигнал"/
+   "Непрозрачност"), with the tier's short legend text as a native tooltip. #}
+{% macro tier_chip(f) -%}
+<span class="chip chip--plain" title="{{ f.tier_tooltip }}"><span class="dot dot--{{ f.tier_key }}" aria-hidden="true"></span>{{ f.tier_label }}</span>
+{%- endmacro %}
+
+{# Search field + optional count, used above every filterable table. #}
+{% macro search(placeholder, label="Търсене в таблицата") -%}
+<label class="search">
+  <svg class="search__icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="6" cy="6" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m9.25 9.25 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+  <input class="input" type="search" data-table-search placeholder="{{ placeholder }}" aria-label="{{ label }}">
+  <kbd class="search__kbd" aria-hidden="true">/</kbd>
+</label>
+{%- endmacro %}
+
+{% macro count(total) -%}
+<p class="toolbar__count"><span data-table-count>{{ total | num }}</span> от {{ total | num }}</p>
+{%- endmacro %}
+
+{# Small muted label shown above a table cell's value only in the phone
+   stacked-row layout (hidden on desktop, where the column header already
+   says this). Used to build the "label on top, value below" 2-column grid
+   that `.table--stack` tables fall back to on narrow screens. #}
+{% macro cell_label(text) -%}
+<span class="cell-label">{{ text }}</span>
+{%- endmacro %}
+
+{# Flat single-series column chart. items: list of {label, value}.
+   Rendered as an SVG without a viewBox: x/width are percentages (so the
+   chart fills any container), y/height are pixels (so text never scales).
+   Only the tallest and the most recent bar get a direct value label (the
+   latest bar is the one accent-coloured mark); every bar carries its exact
+   value as a native hover tooltip, and the full figures are in the tables
+   and CSV exports. #}
+{% macro vbar_chart(items, value_fmt, height=240, bar_ratio=0.34, label="Диаграма") %}
+{%- set max_value = (items | map(attribute='value') | max) if items else 1 -%}
+{%- if max_value <= 0 -%}{%- set max_value = 1 -%}{%- endif -%}
+{%- set n = items | length -%}
+{%- set slot = 100.0 / (n if n else 1) -%}
+{%- set bw = slot * bar_ratio -%}
+{%- set top_pad = 28 -%}
+{%- set bottom_pad = 28 -%}
+{%- set plot_h = height - top_pad - bottom_pad -%}
+{%- set base_y = top_pad + plot_h -%}
+<figure class="chart">
+  <svg class="chart__svg" width="100%" height="{{ height }}" role="img" aria-label="{{ label }}">
+    {% for item in items %}
+    {%- set v = item.value if item.value and item.value > 0 else 0 -%}
+    {#- non-zero values get at least a 2px sliver so they stay visible/hoverable -#}
+    {%- set bar_h = ([v / max_value * plot_h, 2] | max) if v > 0 else 0 -%}
+    {%- set cx = slot * (loop.index0 + 0.5) -%}
+    {%- set x = cx - bw / 2 -%}
+    {%- set y = base_y - bar_h -%}
+    {%- set is_max = (item.value == max_value) -%}
+    <g class="chart__col{% if loop.last %} chart__col--accent{% endif %}">
+      <rect class="chart__hit" x="{{ '%.3f' | format(slot * loop.index0) }}%" y="0" width="{{ '%.3f' | format(slot) }}%" height="{{ height }}"></rect>
+      {% if bar_h >= 1 %}
+      <rect class="chart__bar" x="{{ '%.3f' | format(x) }}%" y="{{ '%.1f' | format(y) }}" width="{{ '%.3f' | format(bw) }}%" height="{{ '%.1f' | format(bar_h) }}" rx="4"></rect>
+      {% if bar_h > 4 %}<rect class="chart__bar" x="{{ '%.3f' | format(x) }}%" y="{{ '%.1f' | format(base_y - 4) }}" width="{{ '%.3f' | format(bw) }}%" height="4"></rect>{% endif %}
+      {% endif %}
+      {% if is_max or loop.last %}
+      <text class="chart__value{% if loop.last and n > 1 %} chart__value--last{% endif %}" x="{{ '%.3f' | format(cx) }}%" y="{{ '%.1f' | format(y - 10) }}" text-anchor="middle">{{ value_fmt(item.value) }}</text>
+      {% endif %}
+      <text class="chart__cat" x="{{ '%.3f' | format(cx) }}%" y="{{ height - 6 }}" text-anchor="middle">{{ item.label }}</text>
+      <title>{{ item.label }}: {{ value_fmt(item.value) }}</title>
+    </g>
+    {% endfor %}
+    <line class="chart__baseline" x1="0" y1="{{ base_y + 0.5 }}" x2="100%" y2="{{ base_y + 0.5 }}"></line>
+  </svg>
+</figure>
+{% endmacro %}

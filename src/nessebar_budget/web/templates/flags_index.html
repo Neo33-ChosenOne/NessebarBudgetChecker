@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Сигнали — Бюджетен монитор Несебър{% endblock %}
+{% block content %}
+<div class="container">
+  {% call m.page_head("Сигнали", "Сигнали") %}
+  Автоматични проверки за несъответствия в поръчките и бюджета, по публично описани
+  <a href="{{ root }}methodology.html#rules">правила</a>.
+  <span class="page-head__note"><strong>Важно:</strong> сигналът означава „заслужава обяснение", а не „доказано нарушение" —
+  за всеки случай може да има легитимно обяснение. Проверявайте контекста, преди да правите заключения.</span>
+  {% endcall %}
+
+  {% if flags %}
+  <div class="stats stats--3 stats--compact" role="list">
+    {% for key in tier_order %}
+    <div class="stat" role="listitem" title="{{ tier_tooltips[key] }}">
+      <span class="stat__label"><span class="dot dot--{{ key }}" aria-hidden="true"></span>{{ tier_labels[key] }}</span>
+      <span class="stat__value"><span class="figure">{{ flag_tier_counts[key] | num }}</span></span>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="stats stats--3 stats--compact" role="list">
+    {% for key in severity_order %}
+    <div class="stat" role="listitem">
+      <span class="stat__label"><span class="dot dot--{{ key }}" aria-hidden="true"></span>{{ severity_labels[key] }} тежест</span>
+      <span class="stat__value"><span class="figure">{{ flag_severity_counts[key] | num }}</span></span>
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="footnote">
+    <span class="dot dot--violation" aria-hidden="true"></span> <strong>Нарушение</strong> — {{ tier_tooltips.violation }}.
+    <span class="dot dot--signal" aria-hidden="true"></span> <strong>Сигнал</strong> — {{ tier_tooltips.signal }}.
+    <span class="dot dot--opacity" aria-hidden="true"></span> <strong>Непрозрачност</strong> — {{ tier_tooltips.opacity }}.
+  </p>
+
+  <section class="block" data-flag-filters>
+    <div class="toolbar">
+      {{ m.search("Търси правило, съобщение, договор…") }}
+      <div class="segmented" role="group" aria-label="Филтър по ниво">
+        <button type="button" data-tier-filter="" aria-pressed="true">Всички</button>
+        <button type="button" data-tier-filter="violation" aria-pressed="false">Нарушения</button>
+        <button type="button" data-tier-filter="signal" aria-pressed="false">Сигнали</button>
+        <button type="button" data-tier-filter="opacity" aria-pressed="false">Непрозрачност</button>
+      </div>
+      <label class="select">
+        <span class="visually-hidden">Тежест</span>
+        <select class="input" data-table-filter="severity" aria-label="Филтър по тежест">
+          <option value="">Всяка тежест</option>
+          {% for key in severity_order %}
+          <option value="{{ key }}">{{ severity_labels[key] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="select">
+        <span class="visually-hidden">Правило</span>
+        <select class="input" data-table-filter="rule" aria-label="Филтър по правило">
+          <option value="">Всички правила</option>
+          {% for rule in flags | map(attribute='rule') | unique | sort %}
+          <option value="{{ rule }}">{{ rule_labels.get(rule, rule) }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="select">
+        <span class="visually-hidden">Година на възникване</span>
+        <select class="input" data-table-filter="year" aria-label="Филтър по година на възникване">
+          <option value="">Всички години</option>
+          {% for year in flags | map(attribute='event_year') | reject('none') | unique | sort(reverse=true) %}
+          <option value="{{ year }}">{{ year }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {{ m.count(flags | length) }}
+    </div>
+
+    <div class="flaglist">
+      {% for f in flags %}
+      <details class="flagrow" id="{{ f.id }}" data-flag-row data-tier="{{ f.tier_key }}" data-severity="{{ f.severity | sevkey }}" data-rule="{{ f.rule }}" data-year="{{ f.event_year or '' }}">
+        <summary class="issue flagrow__summary">
+          <span class="issue__sev">{{ m.sev_dot(f.severity) }}</span>
+          <span class="issue__rule"><span class="issue__chips">{{ m.chip(f.tier_label, f.tier_key) }}<span class="chip">{{ f.rule_label }}</span></span></span>
+          <span class="issue__msg">{{ f.message }}</span>
+          <time class="issue__date"{% if f.event_year %} title="Година на възникване: {{ f.event_year }} · засечено на {{ f.created_at | bgdate }}"{% else %} title="Засечено на {{ f.created_at | bgdate }}"{% endif %}>
+            {% if f.event_year %}<span class="issue__date-year">{{ f.event_year }}</span>{% endif %}
+            <span class="issue__date-seen">{{ f.created_at | bgdate }}</span>
+          </time>
+          <span class="issue__chev">{{ m.chevron() }}</span>
+        </summary>
+        <div class="flagrow__panel">
+          <p>{{ f.explanation }}</p>
+          {% if f.law_ref %}
+          <div>
+            <span class="eyebrow">Правно основание</span>
+            <p>{{ f.law_ref }}</p>
+          </div>
+          {% endif %}
+          <div>
+            <span class="eyebrow">Документи за изискване</span>
+            <ul>
+              {% for d in f.documents %}<li>{{ d }}</li>{% endfor %}
+            </ul>
+          </div>
+          {% if f.detail_items %}
+          <div>
+            <span class="eyebrow">Числа</span>
+            <dl class="flagrow__numbers">
+              {% for key, label, value in f.detail_items %}
+              <div><dt>{% if key == 'paragraph' %}<abbr title="категория (§), не редът на обекта">{{ label }}</abbr>{% else %}{{ label }}{% endif %}</dt><dd>{{ value }}</dd></div>
+              {% endfor %}
+            </dl>
+          </div>
+          {% endif %}
+          {{ m.sources_box(f, root) }}
+          <p class="more">
+            {% if f.subject_href %}<a class="row-link" href="{{ root ~ (f.subject_href | sitepath) }}">{{ f.subject_label }}</a> ·
+            {% endif %}
+            <a class="link-arrow" href="{{ root ~ (f.permalink_href | sitepath) }}">Постоянна връзка към сигнала {{ m.chevron() }}</a>
+          </p>
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <p class="empty">Все още няма регистрирани сигнали. Правилата за автоматична проверка са описани в
+  <a href="{{ root }}methodology.html#rules">методологията</a>.</p>
+  {% endif %}
+</div>
+{% endblock %}

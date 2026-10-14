@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Бюджетен монитор Несебър{% endblock %}</title>
+<meta name="description" content="{% block description %}Граждански мониторинг на обществените поръчки и бюджета на Община Несебър.{% endblock %}">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#08090a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
+<link rel="icon" type="image/svg+xml" href="{{ root }}static/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="{{ root }}static/style.css?v={{ asset_version }}">
+{% block head %}{% endblock %}
+</head>
+<body>
+<a class="skip-link" href="#main">Към съдържанието</a>
+{% set nav_items = [
+  ("contracts", "contracts/index.html", "Поръчки"),
+  ("contractors", "contractors/index.html", "Изпълнители"),
+  ("budget", "budget/index.html", "Бюджет"),
+  ("map", "map.html", "Карта"),
+  ("cash", "cash/index.html", "Касово изпълнение"),
+  ("flags", "flags/index.html", "Сигнали"),
+  ("methodology", "methodology.html", "Методология"),
+] %}
+<header class="nav">
+  <div class="container nav__inner">
+    <a class="wordmark" href="{{ root }}index.html" aria-label="Бюджетен монитор Несебър — начало">
+      <svg class="wordmark__mark" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><rect x="0.75" y="0.75" width="18.5" height="18.5" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="5" y="10" width="2.25" height="5" rx="1" fill="currentColor"/><rect x="8.875" y="7" width="2.25" height="8" rx="1" fill="currentColor"/><rect x="12.75" y="4.5" width="2.25" height="10.5" rx="1" fill="currentColor"/></svg>
+      <span class="wordmark__text">Бюджетен монитор <span class="wordmark__muted">Несебър</span></span>
+      <span class="beta-pill" title="Проектът е в тестов период">бета</span>
+    </a>
+    <nav class="nav__links" aria-label="Основна навигация">
+      {% for key, href, label in nav_items %}
+      <a href="{{ root }}{{ href }}"{% if active == key %} aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </nav>
+    <a class="btn btn--ghost btn--sm nav__data" href="{{ root }}data/index.html"{% if active == 'data' %} aria-current="page"{% endif %}>Данни</a>
+  </div>
+</header>
+<script>
+(function () {
+  var current = document.querySelector(".nav__links a[aria-current='page']");
+  if (current && current.scrollIntoView) {
+    current.scrollIntoView({ block: "nearest", inline: "center" });
+  }
+})();
+</script>
+<main id="main">
+{% block content %}{% endblock %}
+</main>
+<footer class="footer">
+  <div class="container">
+    <div class="footer__grid">
+      <div class="footer__brand">
+        <a class="wordmark" href="{{ root }}index.html">
+          <svg class="wordmark__mark" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><rect x="0.75" y="0.75" width="18.5" height="18.5" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="5" y="10" width="2.25" height="5" rx="1" fill="currentColor"/><rect x="8.875" y="7" width="2.25" height="8" rx="1" fill="currentColor"/><rect x="12.75" y="4.5" width="2.25" height="10.5" rx="1" fill="currentColor"/></svg>
+          <span class="wordmark__text">Бюджетен монитор <span class="wordmark__muted">Несебър</span></span>
+        </a>
+        <p class="footer__note">Независим граждански проект, не е официален сайт на Община Несебър.
+        Сигналите са автоматично откроени несъответствия, а не доказателство за нарушение.</p>
+        <p class="footer__note"><strong>Без изкуствен интелект.</strong> Всички числа идват от официални
+        източници, а сигналите се изчисляват с публични, фиксирани правила.
+        <a href="{{ root }}methodology.html#no-ai">Как работи</a></p>
+      </div>
+      <div class="footer__col">
+        <p class="eyebrow">Разгледай</p>
+        <ul>
+          {% for key, href, label in nav_items[:6] %}
+          <li><a href="{{ root }}{{ href }}">{{ label }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div class="footer__col">
+        <p class="eyebrow">Проект</p>
+        <ul>
+          <li><a href="{{ root }}methodology.html">Методология</a></li>
+          <li><a href="{{ root }}data/index.html">Отворени данни</a></li>
+          <li><a href="{{ repo_url }}" rel="noopener">Код в GitHub <span aria-hidden="true">↗</span></a></li>
+          <li><a href="{{ repo_url }}/blob/main/LICENSE" rel="noopener">Лиценз EUPL-1.2 <span aria-hidden="true">↗</span></a></li>
+          <li><a href="{{ repo_url }}/issues/new" rel="noopener">Обратна връзка <span aria-hidden="true">↗</span></a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer__meta">
+      <p>Последно обновено <time>{{ generated_at_label }}</time></p>
+      <p>Източници: ЦАИС ЕОП (app.eop.bg), СИГМА (sigma.midt.bg), nesebar.bg, Министерство на финансите</p>
+    </div>
+  </div>
+</footer>
+<script src="{{ root }}static/app.js?v={{ asset_version }}" defer></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

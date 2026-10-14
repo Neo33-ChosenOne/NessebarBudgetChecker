@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ c.title or c.source_id }} — Бюджетен монитор Несебър{% endblock %}
+{% block content %}
+<div class="container">
+  {% call m.page_head("", c.title or "(без заглавие)", root ~ "contracts/index.html", "Всички поръчки") %}
+  <span class="meta-row">
+    {% if c.is_signed %}{{ m.chip("Подписан договор", "accent") }}{% else %}{{ m.chip("Текуща процедура", "neutral") }}{% endif %}
+    <span>№ {{ c.source_id }} в ЦАИС ЕОП</span>
+  </span>
+  {% endcall %}
+
+  <section class="block">
+    <dl class="facts">
+      <div class="facts__row">
+        <dt>{{ c.value_label | capitalize }}</dt>
+        <dd class="facts__big">{{ c.display_value_eur | eur }}</dd>
+      </div>
+      {% if c.is_signed and c.estimated_value_eur is not none %}
+      <div class="facts__row">
+        <dt>Прогнозна стойност (преди възлагане)</dt>
+        <dd class="tnum">{{ c.estimated_value_eur | eur }}</dd>
+      </div>
+      {% endif %}
+      <div class="facts__row">
+        <dt>Изпълнител</dt>
+        <dd>
+          {% if c.contractor_slug %}
+          <a href="{{ root }}contractors/{{ c.contractor_slug }}.html">{{ c.contractor_name or 'профил на изпълнителя' }}</a>
+          {% else %}{{ c.contractor_name or '—' }}{% endif %}
+          {% if c.contractor_eik and c.contractor_eik != "не се публикува" %}
+          <span class="muted">ЕИК {{ c.contractor_eik }}</span>
+          {% elif c.contractor_slug %}
+          <span class="muted">ЕИК не е публикуван</span>
+          {% endif %}
+        </dd>
+      </div>
+      <div class="facts__row">
+        <dt>Процедура</dt>
+        <dd>{% if c.procedure_type %}{{ m.chip(c.procedure_type) }}{% else %}—{% endif %}</dd>
+      </div>
+      <div class="facts__row">
+        <dt>Брой подадени оферти</dt>
+        <dd>
+          {% if c.bids_received is not none %}
+          <span class="tnum">{{ c.bids_received | num }}</span>{% if c.bids_received == 1 %} {{ m.chip("един участник", "warning") }}{% endif %}
+          {% else %}<span class="muted">няма данни</span>{% endif %}
+        </dd>
+      </div>
+      <div class="facts__row">
+        <dt>CPV код</dt>
+        <dd class="tnum">{{ c.cpv_code or '—' }}</dd>
+      </div>
+      <div class="facts__row">
+        <dt>Дата на публикуване</dt>
+        <dd class="tnum">{{ c.published_at | bgdate }}</dd>
+      </div>
+      {% if c.is_signed %}
+      <div class="facts__row">
+        <dt>Дата на договора</dt>
+        <dd class="tnum">{{ c.contract_date | bgdate }}</dd>
+      </div>
+      {% endif %}
+      <div class="facts__row">
+        <dt>Източник</dt>
+        <dd><a class="break" href="{{ c.url }}" rel="noopener">{{ c.url }} <span aria-hidden="true">↗</span></a></dd>
+      </div>
+      {% if c.location %}
+      <div class="facts__row">
+        <dt>Местоположение</dt>
+        <dd>
+          {% if c.location.precision == "parcel" %}Имот {{ c.location.cadnums[0] }}{% else %}Улица „{{ c.location.street }}“{% endif %}
+          {% if c.location.settlement %}, {{ c.location.settlement }}{% endif %}
+          {% if c.location.address %}<br><span class="muted">{{ c.location.address }}</span>{% endif %}
+          <br><a href="{{ root }}map.html#loc={{ c.location.id }}">Виж на картата →</a>
+        </dd>
+      </div>
+      {% endif %}
+    </dl>
+  </section>
+
+  {% if c.sigma_source_id %}
+  <section class="block">
+    <h2 class="block__title">Данни от СИГМА</h2>
+    <p class="block__sub">Съпоставен със запис <code>{{ c.sigma_source_id }}</code> в sigma.midt.bg по изпълнител,
+    стойност (±1%) и дата на договора (±3 дни) — <a href="{{ root }}methodology.html#dedupe">как работи съпоставянето</a>.</p>
+    <dl class="facts">
+      {% if c.sigma_unp %}<div class="facts__row"><dt>Уникален номер на поръчката (УНП)</dt><dd class="tnum">{{ c.sigma_unp }}</dd></div>{% endif %}
+      {% if c.sigma_procedure_type %}<div class="facts__row"><dt>Тип процедура (по СИГМА)</dt><dd>{{ c.sigma_procedure_type }}</dd></div>{% endif %}
+      {% if c.sigma_sector_code is not none %}<div class="facts__row"><dt>Код на сектор</dt><dd class="tnum">{{ c.sigma_sector_code }}</dd></div>{% endif %}
+      <div class="facts__row"><dt>Финансиране от ЕС</dt><dd>{{ "да" if c.sigma_eu_funded else "не" if c.sigma_eu_funded is not none else "няма данни" }}</dd></div>
+    </dl>
+  </section>
+  {% endif %}
+
+  <section class="block">
+    <h2 class="block__title">Сигнали по тази поръчка</h2>
+    {% if c.flags %}
+    <ul class="issues">
+      {% for f in c.flags %}
+      <li>
+        <a class="issue" href="{{ root ~ (f.permalink_href | sitepath) }}">
+          <span class="issue__sev">{{ m.sev_dot(f.severity) }}</span>
+          <span class="issue__rule"><span class="issue__chips">{{ m.chip(f.tier_label, f.tier_key) }}<span class="chip">{{ f.rule_label }}</span></span></span>
+          <span class="issue__msg issue__msg--full">{{ f.message }}{% if f.law_ref %} <span class="muted">({{ f.law_ref }})</span>{% endif %}</span>
+          <time class="issue__date">{{ f.created_at | bgdate }}</time>
+          <span class="issue__chev">{{ m.chevron() }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">Няма регистрирани сигнали по тази поръчка.</p>
+    {% endif %}
+    <p class="more"><a class="link-arrow" href="{{ root }}flags/index.html">Всички сигнали {{ m.chevron() }}</a></p>
+  </section>
+</div>
+{% endblock %}

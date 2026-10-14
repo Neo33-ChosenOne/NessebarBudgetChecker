@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Касово изпълнение — Бюджетен монитор Несебър{% endblock %}
+{% block content %}
+<div class="container">
+  {% call m.page_head("Касово изпълнение", "Касово изпълнение на бюджета") %}
+  Реално извършените плащания по параграфи от началото на {{ latest_period[:4] if latest_period else "" }} г.{% if latest_period %} до {{ latest_period | period }}{% endif %} — по отчет „Б1" на nesebar.bg.
+  {% endcall %}
+
+  {% if not latest %}
+  <p class="empty">Няма заредени данни за касово изпълнение.</p>
+  {% else %}
+  {% set max_cat = (latest.expense_paragraphs | map(attribute='actual_ytd') | select('number') | max) if latest.expense_paragraphs else 0 %}
+  <div class="stats stats--2" role="list">
+    <div class="stat" role="listitem">
+      <span class="stat__label">Разходи от началото на годината</span>
+      <span class="stat__value">{{ m.figure(latest.expense_total) }}</span>
+      <span class="stat__note">Към {{ latest_period | period }}</span>
+    </div>
+    <div class="stat" role="listitem">
+      <span class="stat__label">Приходи от началото на годината</span>
+      <span class="stat__value">{{ m.figure(latest.income_total) }}</span>
+      <span class="stat__note">Разликата се покрива от преходен остатък, заеми и др.</span>
+    </div>
+  </div>
+
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Разходи по категории</h2>
+      <p class="block__sub">Касови разходи по §-параграф от началото на годината, подредени по размер.</p>
+    </div>
+    <div class="table-wrap">
+    <table class="table table--bars table--stack">
+      <thead><tr><th class="col-par">§</th><th>Наименование</th><th class="col-meter"><span class="visually-hidden">Относителен размер</span></th><th class="num">Разход</th></tr></thead>
+      <tbody>
+      {% for r in latest.expense_paragraphs %}
+      <tr>
+        <td class="muted tnum">{{ r.paragraph }}</td>
+        <td>{{ r.name }}</td>
+        <td class="col-meter">{{ m.cell_label("Дял от разходите") }}{{ m.meter((r.actual_ytd or 0) / max_cat if max_cat else 0, "accent" if loop.first else "muted") }}</td>
+        <td class="num">{{ m.cell_label("Разход") }}{{ r.actual_ytd | eur }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  {% if minfin %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Несебър спрямо другите общини</h2>
+      <p class="block__sub">Показатели на Министерството на финансите за {{ minfin[0].period_label }}, сравнени с медианата за всички общини.</p>
+    </div>
+    <div class="table-wrap">
+    <table class="table table--minfin table--stack">
+      <thead><tr><th>Показател</th><th class="num">Несебър</th><th class="num">Медиана</th><th class="num">Общини</th></tr></thead>
+      <tbody>
+      {% for row in minfin %}
+      <tr>
+        <td>{{ row.title }}</td>
+        <td class="num strong">{{ m.cell_label("Несебър") }}{{ row.nessebar | pct }}</td>
+        <td class="num">{{ m.cell_label("Медиана") }}{{ row.median | pct }}</td>
+        <td class="num muted">{{ m.cell_label("Общини") }}{{ row.n_municipalities | num }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="footnote">Показателите са дялове спрямо съответната база (приходи или разходи). Определенията са в
+    <a href="{{ root }}methodology.html">методологията</a>.</p>
+  </section>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Бюджет — капиталова програма — Бюджетен монитор Несебър{% endblock %}
+{% block content %}
+<div class="container">
+  {% call m.page_head("Бюджет", "Капиталова програма") %}
+  Какво е планирано, колко е похарчено и кои обекти са добавени през годината — по месечните отчети на nesebar.bg.
+  {% endcall %}
+  {% if not latest %}
+  <p class="empty">Няма заредени данни за капиталовата програма.</p>
+  {% else %}
+  {% with data = latest, period = latest_period %}{% include "_budget_body.html" %}{% endwith %}
+  <p class="footnote">Показан е консолидираният ред „Общо". Данни за още {{ other_units_count | num }} звена (кметства,
+  училища, детски градини) са в <a href="{{ root }}data/budget_line_items.csv">budget_line_items.csv</a>.</p>
+  {% endif %}
+</div>
+{% endblock %}

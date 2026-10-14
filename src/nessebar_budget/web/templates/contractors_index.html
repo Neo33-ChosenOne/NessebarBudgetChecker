@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Изпълнители — Бюджетен монитор Несебър{% endblock %}
+{% block content %}
+{% set max_share = (contractors | map(attribute='share_of_total') | max) if contractors else 1 %}
+<div class="container">
+  {% call m.page_head("Изпълнители", "Изпълнители") %}
+  {{ contractors | length | num }} фирми и лица със сключени договори с Община Несебър, подредени по обща стойност.
+  {% endcall %}
+
+  <section class="block" data-table-container>
+    <div class="toolbar">
+      {{ m.search("Търси име или ЕИК…") }}
+      {{ m.count(contractors | length) }}
+    </div>
+    <div class="table-wrap">
+    <table class="table table--contractors table--stack" data-sortable data-filterable>
+      <thead>
+        <tr>
+          <th data-sort="none">Изпълнител</th>
+          <th data-sort="none" class="num">Договори</th>
+          <th data-sort="none" class="num">Обща стойност</th>
+          <th data-sort="none" class="num col-share">Дял от общо</th>
+          <th data-sort="none" class="num">Един участник</th>
+          <th data-sort="none" class="num col-tr" title="Статус в Търговския регистър">ТР</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for co in contractors %}
+        <tr>
+          <td><a class="row-link" href="{{ root }}contractors/{{ co.slug }}.html">{{ co.name }}</a><span class="sub">ЕИК {{ co.eik_display }}</span></td>
+          <td class="num" data-sort-value="{{ co.contract_count }}">{{ m.cell_label("Договори") }}{{ co.contract_count | num }}</td>
+          <td class="num" data-sort-value="{{ co.total_value_eur }}">{{ m.cell_label("Обща стойност") }}{{ co.total_value_eur | eur }}</td>
+          <td class="num col-share" data-sort-value="{{ co.share_of_total }}">
+            {{ m.cell_label("Дял от общо") }}<span class="share">{{ m.meter(co.share_of_total / max_share if max_share else 0, "muted") }}<span>{{ co.share_of_total | pct }}</span></span>
+          </td>
+          <td class="num" data-sort-value="{{ co.single_bidder_share if co.single_bidder_share is not none else -1 }}">
+            {{ m.cell_label("Един участник") }}{% if co.single_bidder_share is not none %}{{ co.single_bidder_share | pct }}{% else %}<span class="muted">няма данни</span>{% endif %}
+          </td>
+          <td class="num col-tr">
+            {{ m.cell_label("ТР") }}<span class="dot dot--{{ co.tr_status_dot }}" role="img" aria-label="Търговски регистър: {{ co.tr_status_label }}" title="Търговски регистър: {{ co.tr_status_label }}"></span>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="footnote">„Един участник" — каква част от договорите на изпълнителя са възложени при само една подадена
+    оферта (от договорите, за които броят оферти е известен от СИГМА). Висок дял не е нарушение сам по себе си,
+    но заслужава поглед.</p>
+  </section>
+</div>
+{% endblock %}
