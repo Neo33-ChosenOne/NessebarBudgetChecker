@@ -131,6 +131,7 @@ def test_required_pages_exist(built_site: Path) -> None:
         "data/settlements.csv",
         "data/locations.geojson",
         "data/location_parcels.geojson",
+        "data/cadastre_index.json",
         "static/style.css",
         "static/app.js",
     ]:
@@ -599,6 +600,15 @@ def test_locations_geojson_is_valid_and_every_href_exists(built_site: Path) -> N
             flag_href = flag["href"]
             assert not flag_href.startswith("/") and not flag_href.startswith("..")
             assert (built_site / flag_href).exists(), f"flag href does not exist: {flag_href}"
+
+
+@requires_db
+def test_cadastre_index_maps_ids_to_points_in_the_municipality(built_site: Path) -> None:
+    index = json.loads((built_site / "data" / "cadastre_index.json").read_text(encoding="utf-8"))
+    assert len(index) > 30_000
+    for cadnum, (lon, lat) in index.items():
+        assert re.fullmatch(r"\d{5}\.\d+\.\d+", cadnum), cadnum
+        assert 27.4 < lon < 28.0 and 42.5 < lat < 42.9, (cadnum, lon, lat)
 
 
 @requires_db

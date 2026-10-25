@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from nessebar_budget.analysis.rules._common import _local_date
 from nessebar_budget.db.budget_models import BudgetLineItem, CashExecutionLine
 from nessebar_budget.db.models import CadastreParcel, Company, CompanyPerson, Flag, Procurement
+from nessebar_budget.scrapers.cadastre import index_path as cadastre_index_path
 from nessebar_budget.scrapers.registry import normalize_eiks
 from nessebar_budget.web import geo
 
@@ -2562,6 +2563,8 @@ def build_site(out_dir: Path, db_url: str | None = None) -> None:
             json.dumps(geo.export_location_parcels_geojson(locations), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        if cadastre_index_path().exists():
+            shutil.copy(cadastre_index_path(), data_dir / "cadastre_index.json")
 
     generated_at = dt.datetime.now(dt.UTC).replace(microsecond=0)
     generated_at_label = generated_at.strftime("%d.%m.%Y %H:%M") + " UTC"

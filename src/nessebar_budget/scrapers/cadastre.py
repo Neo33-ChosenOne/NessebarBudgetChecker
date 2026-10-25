@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import json
 import logging
 import time
 import zipfile
@@ -85,6 +86,14 @@ def source_path(ekatte: str) -> str:
     in `CadastreParcel.source_path`)."""
     label = LABEL_BY_EKATTE[ekatte]
     return f"област Бургас/община Несебър/{label}/поземлени имоти.zip"
+
+
+def index_path() -> Path:
+    """`data/cadastre_index.json`: `{cadnum: [lon, lat]}` centroid of every
+    land parcel in the municipality (~40k), written by `sync_cadastre` and
+    copied into the site for the map's search-by-identifier box. Committed
+    alongside `data/nessebar.db` because the zips it is built from are not."""
+    return Path(get_settings().data_dir) / "cadastre_index.json"
 
 
 def download_url(ekatte: str) -> str:
@@ -469,6 +478,7 @@ def sync_cadastre(session: Any, scraper: CadastreScraper | None = None) -> dict[
 
     per_settlement: list[dict[str, Any]] = []
     total_stored = 0
+    index: dict[str, list[float]] = {}
     for ekatte, label in LABELS:
         zip_path, modified = scraper.download(ekatte)
         street_keys = streets_by_ekatte.get(ekatte, set())
@@ -476,6 +486,9 @@ def sync_cadastre(session: Any, scraper: CadastreScraper | None = None) -> dict[
         kept: list[dict[str, Any]] = []
         for parcel in read_parcels(zip_path):
             cadnum = parcel.get("cadnum")
+            if cadnum and parcel.get("centroid_lonlat"):
+                lon, lat = parcel["centroid_lonlat"]
+                index[cadnum] = [round(lon, 5), round(lat, 5)]
             is_referenced_id = cadnum in parcel_keys
             strename = parcel.get("strename")
             is_street_match = bool(
@@ -499,9 +512,12 @@ def sync_cadastre(session: Any, scraper: CadastreScraper | None = None) -> dict[
             }
         )
 
+    index_path().write_text(json.dumps(index, separators=(",", ":")), encoding="utf-8")
+
     return {
         "object_names": len(object_names),
         "titles": len(titles),
+        "indexed_parcels": len(index),
         "referenced_parcel_ids": len(parcel_keys),
         "referenced_street_keys": sum(len(v) for v in streets_by_ekatte.values()),
         "total_parcels_stored": total_stored,

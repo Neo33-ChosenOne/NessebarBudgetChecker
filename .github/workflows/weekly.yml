@@ -67,7 +67,7 @@ jobs:
         run: |
           git config user.name "nessebar-bot"
           git config user.email "actions@github.com"
-          git add data/nessebar.db
+          git add data/nessebar.db data/cadastre_index.json
           if git diff --cached --quiet; then
             echo "No data changes to commit."
           else

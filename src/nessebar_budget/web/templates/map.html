@@ -54,7 +54,12 @@
         <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
         <span class="switch__label">Кадастрална карта (АГКК)</span>
       </label>
+      <form class="search" id="parcel-search" role="search">
+        <svg class="search__icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="6" cy="6" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m9.25 9.25 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <input class="input" type="search" id="parcel-search-input" placeholder="Кадастрален № (напр. 51500.501.4)" aria-label="Търсене по кадастрален номер на имот" inputmode="decimal" autocomplete="off">
+      </form>
     </div>
+    <p class="map__note" id="parcel-search-note" hidden aria-live="polite"></p>
 
     <div id="map" class="map__frame" data-root="{{ root }}" role="img" aria-label="Карта на капиталовите разходи на Община Несебър по населени места"></div>
 
@@ -418,6 +423,79 @@
         cadastreLayer = null;
         if (cadastreNote) { cadastreNote.hidden = true; }
       }
+    });
+  }
+
+  // -- Search by cadastral identifier. data/cadastre_index.json (written by
+  // scrapers.cadastre.sync_cadastre from АГКК's open data) maps every land
+  // parcel id in the municipality to its centroid; fetched on first search.
+  // АГКК's ArcGIS server rejects query/find and KAIS has no deep links, so
+  // this local index is the only way to jump to a parcel.
+  var searchForm = document.getElementById("parcel-search");
+  var searchInput = document.getElementById("parcel-search-input");
+  var searchNote = document.getElementById("parcel-search-note");
+  var searchMarker = null;
+  var parcelIndex = null;
+
+  function showSearchNote(text) {
+    searchNote.textContent = text;
+    searchNote.hidden = !text;
+  }
+
+  function settlementCenter(ekatte) {
+    if (!geo) return null;
+    var f = geo.features.filter(function (f) { return f.properties.ekatte === ekatte; })[0];
+    return f ? L.latLng(f.geometry.coordinates[1], f.geometry.coordinates[0]) : null;
+  }
+
+  function loadParcelIndex() {
+    if (parcelIndex) return Promise.resolve(parcelIndex);
+    return fetch(root + "data/cadastre_index.json")
+      .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(function (data) { parcelIndex = data; return data; });
+  }
+
+  function showParcel(cadnum, lonlat) {
+    var latlng = L.latLng(lonlat[1], lonlat[0]);
+    if (searchMarker) map.removeLayer(searchMarker);
+    searchMarker = L.marker(latlng).addTo(map).bindPopup(
+      "<strong>ПИ " + cadnum + "</strong><br>" +
+      "<a href=\"https://kais.cadastre.bg/bg/Map\" target=\"_blank\" rel=\"noopener\">Отвори КАИС (АГКК) и поставете номера ↗</a>"
+    );
+    map.setView(latlng, 18);
+    searchMarker.openPopup();
+    // The АГКК overlay is what actually draws the parcel outline.
+    if (cadastreToggle && !cadastreToggle.checked) cadastreToggle.click();
+  }
+
+  if (searchForm) {
+    searchForm.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      // Accepts "ПИ 51500.501.4", "51500.501.4.1" (building → its parcel), etc.
+      var m = /(\d{5})\.(\d+)\.(\d+)/.exec(searchInput.value);
+      if (!m) {
+        showSearchNote("Въведете кадастрален номер във вида 51500.501.4 (землище.район.имот).");
+        return;
+      }
+      var cadnum = m[1] + "." + m[2] + "." + m[3];
+      showSearchNote("Търсене…");
+      loadParcelIndex().then(function (idx) {
+        if (idx[cadnum]) {
+          showSearchNote("");
+          showParcel(cadnum, idx[cadnum]);
+          return;
+        }
+        if (searchMarker) { map.removeLayer(searchMarker); searchMarker = null; }
+        var center = settlementCenter(m[1]);
+        if (center) {
+          map.setView(center, 15);
+          showSearchNote("Имот " + cadnum + " не е открит в кадастралния индекс на сайта — показано е землището му. Проверете номера в КАИС.");
+        } else {
+          showSearchNote("Землище " + m[1] + " не е в Община Несебър или номерът е грешен.");
+        }
+      }).catch(function () {
+        showSearchNote("Кадастралният индекс не можа да се зареди. Опитайте по-късно.");
+      });
     });
   }
 })();
