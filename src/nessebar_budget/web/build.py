@@ -2458,6 +2458,9 @@ def build_site(out_dir: Path, db_url: str | None = None) -> None:
     data_dir = out_dir / "data"
     data_dir.mkdir(parents=True)
     shutil.copytree(STATIC_DIR, out_dir / "static")
+    # Keep the GitHub Pages custom domain across rebuilds: the weekly deploy
+    # republishes the whole site and would otherwise drop it.
+    (out_dir / "CNAME").write_text("budget.osn.bg\n", encoding="utf-8")
 
     with Session(engine) as session:
         all_flags_raw = _load_flags_safe(session)
