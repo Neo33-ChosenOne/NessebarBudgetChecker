@@ -148,14 +148,14 @@ def test_related_party_name_match_warns_about_namesakes() -> None:
     flags = rules.related_party_flags(contracts, [company], [official], thresholds)
     assert len(flags) == 1
     flag = flags[0]
-    assert flag["rule"] == "related_party"
     assert flag["tier"] == "signal"
     assert flag["subject_type"] == "contractor"
     assert flag["subject_id"] == "111222333"
     assert flag["details_json"]["match_basis"] == "name"
-    # Below the high-value threshold and a bare name match -> warning, not high.
-    assert flag["severity"] == "warning"
-    assert "съвпадение" in flag["explanation"]
+    # A bare name coincidence is its own low-severity rule now.
+    assert flag["rule"] == "name_match"
+    assert flag["severity"] == "info"
+    assert "съименство" in flag["explanation"]  # warns these may be different people
     assert "декларац" in flag["explanation"]
     assert "чл. 54, ал. 1, т. 7" in flag["law_ref"]
     assert "чл. 37" in flag["law_ref"]  # councillor -> ЗМСМА чл. 37 also cited
@@ -510,7 +510,8 @@ def test_run_full_analysis_related_party_end_to_end() -> None:
 
     summary = run_full_analysis(session, now=_dt(2026, 6, 1))
     session.commit()
-    assert summary.counts["related_party"].new == 1
+    # A name coincidence (person name == official name) is now `name_match`.
+    assert summary.counts["name_match"].new == 1
     session.close()
 
 

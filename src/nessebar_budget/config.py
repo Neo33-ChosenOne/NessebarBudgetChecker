@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     #: and by the site generator for absolute links/canonical URLs.
     site_base_url: str = "https://neo33-chosenone.github.io/NessebarBudgetChecker"
 
+    #: Whether the public site and data exports show the names of natural
+    #: persons (company managers/owners, officials, ЕТ sole traders). Default
+    #: off: names are held back for legal review. Legal entities' company
+    #: names and ЕИК are always shown; an ЕТ's name is a natural person's name.
+    show_person_names: bool = False
+
 
 def get_settings() -> Settings:
     """Return a freshly loaded Settings instance."""

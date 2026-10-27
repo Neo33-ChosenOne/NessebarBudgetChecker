@@ -1,0 +1,4 @@
+{
+  "_readme": "Право на отговор / right of reply. Hand-edited. Each entry is a reply from an affected party, shown next to the matching signal and/or contract with its date and sender. Reference a signal by `flag_id` (the number in the signal URL /flags/<id>.html) and/or a contract by `contract` (its source id, e.g. \"eop:1\", in the contract URL). `date` is ISO YYYY-MM-DD; `sender` is the company/institution name; `text` is their reply. Published within 7 days of receipt (see methodology, 'Право на отговор').",
+  "responses": []
+}

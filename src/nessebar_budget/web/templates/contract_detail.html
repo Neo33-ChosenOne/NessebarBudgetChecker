@@ -114,5 +114,20 @@
     {% endif %}
     <p class="more"><a class="link-arrow" href="{{ root }}flags/index.html">Всички сигнали {{ m.chevron() }}</a></p>
   </section>
+
+  <section class="block">
+    <h2 class="block__title">Отговор или корекция</h2>
+    {% if responses %}
+    {% for r in responses %}
+    <div class="response">
+      <p class="footnote"><strong>{{ r.sender or "—" }}</strong>{% if r.date %} · {{ r.date }}{% endif %}</p>
+      <p>{{ r.text }}</p>
+    </div>
+    {% endfor %}
+    {% endif %}
+    <p class="block__sub">Засегнати сте от тази поръчка? Имате право на отговор или корекция — публикуваме
+    го до 7 дни. Виж <a href="{{ root }}methodology.html#reply">Право на отговор</a>.</p>
+    <a class="btn btn--ghost" href="mailto:osnesebar@gmail.com?subject={{ ('Отговор или корекция по договор № ' ~ c.source_id ~ ' — ' ~ (c.title or '')[:70]) | urlencode }}">Отговор или корекция</a>
+  </section>
 </div>
 {% endblock %}

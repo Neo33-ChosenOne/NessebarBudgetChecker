@@ -48,7 +48,7 @@
       </a>
       {% endif %}
       <a class="stat" role="listitem" href="{{ root }}flags/index.html">
-        <span class="stat__label">Отворени сигнали</span>
+        <span class="stat__label">Отворени сигнали <span class="muted">· {{ all_time_flag_count | num }} за цялото време</span></span>
         <span class="stat__value"><span class="figure">{{ flags_total | num }}</span></span>
         <span class="stat__note sev-breakdown">
           {% for key in severity_order %}
@@ -57,6 +57,9 @@
         </span>
       </a>
     </div>
+    {% if single_bidder_pct_label %}
+    <p class="muted">Конкуренция: <strong>{{ single_bidder_pct_label }}%</strong> ({{ single_bidder_count | num }} от {{ single_bidder_known | num }} подписани договора с данни за броя оферти) са сключени с един участник.</p>
+    {% endif %}
   </div>
 </section>
 

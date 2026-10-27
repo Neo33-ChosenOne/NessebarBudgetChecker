@@ -195,7 +195,7 @@ def test_flags_index_renders_tier_filter(built_site: Path) -> None:
     assert 'data-tier-filter="violation"' in html
     assert 'data-tier-filter="signal"' in html
     assert 'data-tier-filter="opacity"' in html
-    assert "Нарушения" in html and "Сигнали" in html and "Непрозрачност" in html
+    assert "Несъответствия" in html and "Сигнали" in html and "Непрозрачност" in html
     assert "data-flag-row" in html
     assert 'data-tier="' in html
 
@@ -396,16 +396,17 @@ def test_detail_and_period_pages_exist(built_site: Path) -> None:
 
 @requires_db
 def test_contractor_page_shows_trade_register_card(built_site: Path) -> None:
-    """The contractor page for ЕИК 102981058 (ЕЛЕКТРИКАЛ ГРУП, managed by
-    Йордан Пламенов Момчев per the real `companies`/`company_people` data)
-    must carry a "Търговски регистър" card with the company's name and its
-    current manager."""
+    """The contractor page for ЕИК 102981058 (ЕЛЕКТРИКАЛ ГРУП) must carry a
+    "Търговски регистър" card with the company's name. The manager's name is a
+    natural person's name, so by default (show_person_names off) it is redacted
+    -- the card still renders, just without the name."""
     page = built_site / "contractors" / "102981058.html"
     assert page.exists(), "missing contractors/102981058.html"
     html = page.read_text(encoding="utf-8")
     assert "Търговски регистър" in html
-    assert "ЕЛЕКТРИКАЛ ГРУП" in html
-    assert "ЙОРДАН ПЛАМЕНОВ МОМЧЕВ" in html
+    assert "ЕЛЕКТРИКАЛ ГРУП" in html  # legal-entity name stays
+    assert "ЙОРДАН ПЛАМЕНОВ МОМЧЕВ" not in html  # natural-person name hidden by default
+    assert "— (скрито)" in html
 
 
 def _companies_table_count() -> int:

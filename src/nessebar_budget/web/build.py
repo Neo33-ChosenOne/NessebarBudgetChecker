@@ -30,11 +30,12 @@ from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 from nessebar_budget.analysis.rules._common import _local_date
+from nessebar_budget.config import get_settings
 from nessebar_budget.db.budget_models import BudgetLineItem, CashExecutionLine
 from nessebar_budget.db.models import CadastreParcel, Company, CompanyPerson, Flag, Procurement
 from nessebar_budget.scrapers.cadastre import index_path as cadastre_index_path
@@ -147,7 +148,7 @@ def severity_label(severity: str | None) -> str:
 #: workstream; until it exists/is populated, `_tier_key()` below falls back
 #: to a per-rule guess, then to severity -- see its docstring.
 TIER_ORDER = ("violation", "signal", "opacity")
-TIER_LABELS = {"violation": "Нарушение", "signal": "Сигнал", "opacity": "Непрозрачност"}
+TIER_LABELS = {"violation": "Несъответствие", "signal": "Сигнал", "opacity": "Непрозрачност"}
 TIER_TOOLTIPS = {
     "violation": "Пряко несъответствие със закона, видимо от данните",
     "signal": "Модел, съвместим с нередност; нужни са документи",
@@ -710,10 +711,10 @@ def _build_company_card(
         has_cross_links = has_cross_links or bool(also_at)
         people_views.append(
             CompanyPersonView(
-                name=p.name,
+                name=p.name if _SHOW_PERSON_NAMES else _REDACTED_NAME,
                 role_label=COMPANY_ROLE_LABELS.get(p.role, p.role),
                 share_text=_fmt_share(p.share_text),
-                person_eik=p.person_eik,
+                person_eik=p.person_eik if _SHOW_PERSON_NAMES else None,
                 also_at=also_at,
             )
         )
@@ -859,10 +860,10 @@ def _export_company_people(
             writer.writerow(
                 {
                     "eik": comp.eik if comp else "",
-                    "name": p.name,
+                    "name": p.name if _SHOW_PERSON_NAMES else _REDACTED_NAME,
                     "role": p.role,
                     "share_text": p.share_text,
-                    "person_eik": p.person_eik,
+                    "person_eik": p.person_eik if _SHOW_PERSON_NAMES else None,
                 }
             )
 
@@ -1665,7 +1666,8 @@ RULE_LABELS = {
     "missing_annual_report": "Липсващ годишен отчет",
     "eu_funded_irregularity": "Европейски средства със сигнал",
     "price_unverifiable": "Цена, която не може да се провери",
-    "related_party": "Свързано лице",
+    "name_match": "Съвпадение на имена – изисква проверка",
+    "related_party": "Декларирана свързаност – изисква проверка",
     "person_concentration": "Едно лице зад няколко изпълнители",
     "young_company": "Новоучредена фирма",
     "company_status": "Статус на фирмата",
@@ -1732,7 +1734,7 @@ METHODOLOGY_RULES: list[dict[str, Any]] = [
         "detects": "Срокът за подаване на оферти (или времето от изпращане на обявлението до "
         "подписването на договора) е по-кратък от законовия минимум за избраната процедура.",
         "threshold": "Под законовия минимум (напр. 30 дни при открита процедура, 20 при публично "
-        "състезание, 10 при обява) — нарушение; под минимума плюс 5-дневен марж за оценка — сигнал. "
+        "състезание, 10 при обява) — несъответствие; под минимума плюс 5-дневен марж за оценка — сигнал. "
         "В тази база засега 0 отворени случая.",
         "law_ref": "чл. 74, чл. 178, чл. 188 ЗОП (минимални срокове за подаване на оферти по вид "
         "процедура).",
@@ -1823,7 +1825,7 @@ METHODOLOGY_RULES: list[dict[str, Any]] = [
         "detects": "Текущата стойност на договор (след анекси/допълнителни споразумения) е нараснала "
         "спрямо първоначално подписаната.",
         "threshold": "Над 10% ръст, но под 50% (над него се сигнализира като annex_over_cap) — доста "
-        "под законовия таван, затова е ранен сигнал, не твърдение за нарушение.",
+        "под законовия таван, затова е ранен сигнал, не твърдение за несъответствие.",
         "law_ref": "чл. 116, ал. 2 ЗОП (законов таван на натрупаното увеличение: 50% от стойността на "
         "основния договор; тук се сигнализира много по-рано, при +10%).",
         "documents": [
@@ -1907,8 +1909,7 @@ METHODOLOGY_RULES: list[dict[str, Any]] = [
         "поне един друг сигнал на сайта.",
         "threshold": "Прилага се само ако договорът вече носи друг сигнал (пряко, или като член на "
         "група за разделяне на поръчка) — работи последна, върху резултата от всички други правила.",
-        "law_ref": "чл. 248а НК (не е сред текстовете в docs/law, цитиран по задание); докладване на "
-        "нередности пред управляващия орган на програмата и пред OLAF.",
+        "law_ref": "докладване на нередности пред управляващия орган на програмата и пред OLAF.",
         "documents": [
             "договор за безвъзмездна финансова помощ",
             "доклади от проверки на управляващия орган",
@@ -1918,14 +1919,28 @@ METHODOLOGY_RULES: list[dict[str, Any]] = [
     },
     # -- Companies: Trade Register <-> declarations of interest ------------
     {
-        "rule": "related_party",
+        "rule": "name_match",
         "tier": "signal",
         "detects": "Текущ управител, съдружник, едноличен собственик или член на съвета на изпълнител "
-        "носи същото (три имена) с общински съветник/кмет, или е посочен в декларацията за интереси "
-        "на такова лице.",
-        "threshold": "Съвпадение по пълно име (≥ 3 думи) или по декларирана връзка (ЕИК или "
-        "наименование). Висока тежест при декларирана връзка или договори за ≥ 100,000 €, иначе "
-        "средна.",
+        "носи същите три имена като общински съветник/кмет. Само съвпадение на имена — възможно е да "
+        "са различни лица (съименство).",
+        "threshold": "Съвпадение по пълно име (≥ 3 думи). Ниска тежест — изисква проверка в самата "
+        "декларация за интереси.",
+        "law_ref": "чл. 54, ал. 1, т. 7 и ал. 2 ЗОП (конфликт на интереси, който не може да бъде "
+        "отстранен) — приложим само ако проверка потвърди, че е едно и също лице.",
+        "documents": [
+            "актуална справка от Търговския регистър за фирмата",
+            "декларацията за интереси на съответното лице от Регистъра на декларациите",
+        ],
+    },
+    {
+        "rule": "related_party",
+        "tier": "signal",
+        "detects": "Общински съветник/кмет е посочил в декларацията си за интереси връзка с фирма "
+        "(по ЕИК или наименование), която е изпълнител на общината.",
+        "threshold": "Съвпадение по декларирана връзка (ЕИК или наименование). Висока тежест при "
+        "договори за ≥ 100,000 €, иначе средна. Декларацията показва свързаност, не доказва конфликт "
+        "на интереси — такава преценка прави само компетентният орган.",
         "law_ref": "чл. 54, ал. 1, т. 7 и ал. 2 ЗОП (конфликт на интереси, който не може да бъде "
         "отстранен); чл. 37, ал. 1 ЗМСМА (общинският съветник не участва в решения по свои "
         "имуществени интереси).",
@@ -2135,6 +2150,46 @@ def _event_year(
     return None
 
 
+#: Set by `build_site()` from `Settings.show_person_names`. When False (the
+#: default for the public build) natural-person names -- officials, company
+#: managers/owners -- are held back from flag sources/details, contractor
+#: cards and the company_people export. Legal-entity company names and ЕИК
+#: stay. (Module-level because builds are sequential; `_flag_view`/
+#: `_build_company_card` are too deep in the call tree to thread a flag, and
+#: tests call them directly with the default True = names shown.)
+_SHOW_PERSON_NAMES = True
+_REDACTED_NAME = "— (скрито)"
+#: Source-field labels (see rules.companies) whose value is a natural person's
+#: name, redacted when `_SHOW_PERSON_NAMES` is off.
+_PERSON_FIELD_LABELS = {"Име", "Лице в регистъра"}
+
+
+def _redact_person_names(
+    subject_type: str | None, details: Any, sources_raw: Any
+) -> None:
+    """Blank natural-person names in a flag's `details` and `sources` in place
+    (company names and ЕИК are kept). Covers: the official's name in
+    `related_party`/`name_match` details and in the declaration source's
+    label/fields; the registry person field; and the person's own name on a
+    `person_concentration` subject."""
+    if isinstance(details, dict):
+        if details.get("official_name"):
+            details["official_name"] = _REDACTED_NAME
+        if subject_type == "person":
+            for key in ("name", "name_normalized"):
+                if details.get(key):
+                    details[key] = _REDACTED_NAME
+    if isinstance(sources_raw, list):
+        for src in sources_raw:
+            if not isinstance(src, dict):
+                continue
+            if src.get("kind") == "declaration" and src.get("label"):
+                src["label"] = "Декларация за интереси — (име скрито)"
+            for fld in src.get("fields") or []:
+                if isinstance(fld, dict) and fld.get("label") in _PERSON_FIELD_LABELS:
+                    fld["value"] = _REDACTED_NAME
+
+
 def _flag_view(
     flag: Any,
     contract_by_proc_id: dict[int, ContractView],
@@ -2218,6 +2273,11 @@ def _flag_view(
             sources_raw = json.loads(sources_raw)
         except ValueError:
             sources_raw = None
+    if not _SHOW_PERSON_NAMES:
+        _redact_person_names(subject_type, details, sources_raw)
+        if subject_type == "person":
+            subject_label = _REDACTED_NAME
+            subject_line = rule_label
     sources = _source_views(sources_raw)
     if subject_type == "budget_object" and isinstance(details, dict) and details.get("object_name"):
         # So the "Източници" box can show the object's own name in bold,
@@ -2436,6 +2496,28 @@ def _export_flags(flags: list[dict[str, Any]], data_dir: Path) -> None:
     )
 
 
+def _load_responses() -> tuple[dict[int, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
+    """Hand-edited right-of-reply entries (``data/responses.json``), grouped by
+    flag id and by contract ``source_id``. A missing or invalid file yields no
+    responses -- it is optional. Each entry: ``{flag_id?, contract?, date,
+    sender, text}`` (see the file's own ``_readme``)."""
+    by_flag: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    by_contract: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    try:
+        data = json.loads((PROJECT_ROOT / "data" / "responses.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}, {}
+    for entry in data.get("responses", []) if isinstance(data, dict) else []:
+        if not isinstance(entry, dict):
+            continue
+        item = {k: entry.get(k) for k in ("date", "sender", "text")}
+        if isinstance(entry.get("flag_id"), int):
+            by_flag[entry["flag_id"]].append(item)
+        if isinstance(entry.get("contract"), str) and entry["contract"]:
+            by_contract[entry["contract"]].append(item)
+    return dict(by_flag), dict(by_contract)
+
+
 # --------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------
@@ -2444,6 +2526,8 @@ def _export_flags(flags: list[dict[str, Any]], data_dir: Path) -> None:
 def build_site(out_dir: Path, db_url: str | None = None) -> None:
     """Build the full static site into `out_dir` (wiped and recreated each
     run, so builds are idempotent)."""
+    global _SHOW_PERSON_NAMES
+    _SHOW_PERSON_NAMES = get_settings().show_person_names
     out_dir = Path(out_dir)
     if db_url is None:
         db_url = f"sqlite:///{DEFAULT_DB_PATH}"
@@ -2464,6 +2548,9 @@ def build_site(out_dir: Path, db_url: str | None = None) -> None:
 
     with Session(engine) as session:
         all_flags_raw = _load_flags_safe(session)
+        # `all_flags_raw`/`flags` are the OPEN flags (resolved_at IS NULL);
+        # keep the all-time total separately so the homepage can show both.
+        all_time_flag_count = session.scalar(select(func.count(Flag.id))) or 0
         contracts, sigma_stats, _flags_by_proc_id, match_by_eop_id = _build_contracts(
             session, all_flags_raw
         )
@@ -2572,8 +2659,22 @@ def build_site(out_dir: Path, db_url: str | None = None) -> None:
     generated_at = dt.datetime.now(dt.UTC).replace(microsecond=0)
     generated_at_label = generated_at.strftime("%d.%m.%Y %H:%M") + " UTC"
 
+    # Right-of-reply entries (optional, hand-edited data/responses.json).
+    responses_by_flag, responses_by_contract = _load_responses()
+    for f in flags:
+        f["responses"] = responses_by_flag.get(f["id"], [])
+
     signed = [c for c in contracts if c.is_signed]
     open_procs = [c for c in contracts if not c.is_signed]
+    # Single-bidder share among signed contracts that actually carry a bid
+    # count (SIGMA's `bids_received`); definition shown next to it on the site.
+    signed_with_bids = [c for c in signed if c.bids_received is not None]
+    single_bidder = [c for c in signed_with_bids if c.bids_received == 1]
+    single_bidder_pct_label = (
+        f"{100 * len(single_bidder) / len(signed_with_bids):.1f}".replace(".", ",")
+        if signed_with_bids
+        else None
+    )
     by_year: dict[int, dict[str, float]] = defaultdict(lambda: {"count": 0, "total_eur": 0.0})
     for c in signed:
         if c.year is None:
@@ -2671,6 +2772,10 @@ def build_site(out_dir: Path, db_url: str | None = None) -> None:
             "latest_cash": latest_cash,
             "latest_flags": latest_flags,
             "flags_total": len(flags),
+            "all_time_flag_count": all_time_flag_count,
+            "single_bidder_pct_label": single_bidder_pct_label,
+            "single_bidder_count": len(single_bidder),
+            "single_bidder_known": len(signed_with_bids),
             "flag_severity_counts": flag_severity_counts,
             "flag_tier_counts": flag_tier_counts,
             "first_year": year_rows[0]["year"] if year_rows else None,
@@ -2693,7 +2798,10 @@ def build_site(out_dir: Path, db_url: str | None = None) -> None:
     for c in contracts:
         _write(
             env, "contract_detail.html", out_dir / "contracts" / f"{c.source_id}.html",
-            {**base_ctx, "root": "../", "active": "contracts", "c": c},
+            {
+                **base_ctx, "root": "../", "active": "contracts", "c": c,
+                "responses": responses_by_contract.get(c.source_id, []),
+            },
         )
 
     # -- contractors ------------------------------------------------------

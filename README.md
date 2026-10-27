@@ -2,6 +2,9 @@
 
 **Nessebar Budget Checker** / **Несебър Бюджет Чекър**
 
+**Owned and maintained by Обществен Съвет Несебър (ОСН)** — a civic association
+in Nessebar. Dimitar Marenov is the technical lead. See the AI disclosure below.
+
 ## Цел (BG)
 
 Граждански инструмент за наблюдение на бюджета и обществените поръчки на

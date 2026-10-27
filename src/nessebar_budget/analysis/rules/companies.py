@@ -271,42 +271,51 @@ def related_party_flags(
                     matches[key] = (official, "declaration", None, interest)
 
         for official, basis, person, interest in matches.values():
-            severity = "high" if basis == "declaration" or total_eur >= thresholds.related_party_high_eur else "warning"
-            official_name = official.get("name") or "длъжностно лице"
             official_role = _official_role_label(official.get("role"))
             mandate = official.get("mandate")
             mandate_part = f", мандат {mandate}" if mandate else ""
 
+            # Names of natural persons (the official and the company person)
+            # are deliberately NOT put in the public message/explanation --
+            # they stay in `details`/`sources`, shown only when
+            # `show_person_names` is on (see web.build). Company names are
+            # legal entities and remain.
             if basis == "name":
+                rule = "name_match"
+                severity = "info"
                 role_label = _role_label(person.get("role")) if person else "свързано лице"
                 message = (
-                    f"{official_name} ({official_role}{mandate_part}) носи същото име като "
+                    f"Длъжностно лице ({official_role}{mandate_part}) носи същите три имена като "
                     f"{role_label} на „{company_name}“ — изпълнител с {contract_count} договор(и) "
-                    f"за общо {eur(total_eur)} с общината."
+                    f"за общо {eur(total_eur)} с общината. Съвпадение на имена, което изисква проверка."
                 )
                 explanation = (
-                    f"В Търговския регистър „{company_name}“ има {role_label} на име „{person.get('name')}“ "
-                    f"— същото (три имена) като {official_name}, {official_role} в община Несебър. "
-                    "Съвпадение на имена не доказва нищо само по себе си — може да става дума за "
-                    "съвпадение между различни лица (namesake). Ако все пак е едно и също лице, е "
-                    "налице основание по чл. 54, ал. 1, т. 7 ЗОП за отстраняване на изпълнителя. За "
-                    "да се провери, трябва да се разгледа декларацията за интереси на лицето."
+                    f"В Търговския регистър „{company_name}“ има {role_label}, чиито три имена "
+                    f"съвпадат с тези на {official_role} в община Несебър. Съвпадение на имена не "
+                    "доказва нищо само по себе си — напълно възможно е да става дума за различни "
+                    "лица със съвпадащи имена (съименство). Ако все пак е едно и също лице, би имало "
+                    "основание по чл. 54, ал. 1, т. 7 ЗОП за отстраняване на изпълнителя. За да се "
+                    "провери, трябва да се разгледа декларацията за интереси на лицето."
                 )
             else:
-                relation = (interest or {}).get("relation") or "декларирана връзка"
+                # A connection the official declared themselves is strong
+                # evidence (unlike a bare namesake), so it stays high.
+                rule = "related_party"
+                severity = "high"
+                relation = (interest or {}).get("relation") or "връзка"
                 message = (
-                    f"{official_name} ({official_role}{mandate_part}) е декларирал/а {relation} с "
+                    f"Длъжностно лице ({official_role}{mandate_part}) е декларирало {relation} с "
                     f"„{company_name}“ — изпълнител с {contract_count} договор(и) за общо "
-                    f"{eur(total_eur)} с общината."
+                    f"{eur(total_eur)} с общината. Декларирана свързаност, която изисква проверка."
                 )
                 explanation = (
-                    f"{official_name}, {official_role} в община Несебър, е декларирал/а в декларацията "
-                    f"си за интереси връзка с „{company_name}“ ({relation}), а тази фирма е изпълнител "
+                    f"Според декларацията за интереси, {official_role} в община Несебър е "
+                    f"декларирал/а връзка с „{company_name}“ ({relation}), а тази фирма е изпълнител "
                     f"на {contract_count} договор(и) с общината за общо {eur(total_eur)}. Декларацията "
-                    "е самото доказателство за връзката, затова случаят е по-сигурен от съвпадение на "
-                    "имена — остава да се провери дали лицето е участвало в решения, свързани с тази "
-                    "фирма (чл. 37, ал. 1 ЗМСМА за общински съветник), или дали фирмата е следвало да "
-                    "бъде отстранена при възлагането (чл. 54, ал. 1, т. 7 ЗОП)."
+                    "показва свързаност, но не доказва конфликт на интереси — такава преценка прави "
+                    "само компетентният орган. Остава да се провери дали лицето е участвало в решения, "
+                    "свързани с тази фирма (чл. 37, ал. 1 ЗМСМА за общински съветник), или дали "
+                    "фирмата е следвало да бъде отстранена при възлагането (чл. 54, ал. 1, т. 7 ЗОП)."
                 )
 
             law_ref = "чл. 54, ал. 1, т. 7 и ал. 2 ЗОП (конфликт на интереси, който не може да бъде отстранен)"
@@ -348,7 +357,7 @@ def related_party_flags(
 
             out.append(
                 make_flag(
-                    rule="related_party",
+                    rule=rule,
                     tier=TIER_SIGNAL,
                     severity=severity,
                     message=message,
@@ -459,11 +468,11 @@ def person_concentration_flags(
         names_list = "; ".join(f"„{d['name']}“ ({d['contract_count']} дог.)" for d in companies_detail)
 
         message = (
-            f"{display_name} стои зад {len(company_entries)} различни изпълнители на общината "
+            f"Едно лице стои зад {len(company_entries)} различни изпълнители на общината "
             f"({names_list}) — заедно с {total_contracts} договор(и) за общо {eur(total_eur)}."
         )
         explanation = (
-            f"Едно и също лице, {display_name}, е вписано в Търговския регистър като управител, "
+            "Едно и също лице е вписано в Търговския регистър като управител, "
             "съдружник, едноличен собственик или член на съвета на няколко отделни фирми, които "
             "поотделно изглеждат като различни изпълнители, но заедно печелят голям дял от "
             "обществените поръчки на общината. Това може да сочи към изкуствено разпределяне на "

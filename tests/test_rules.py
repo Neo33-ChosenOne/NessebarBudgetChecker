@@ -1173,7 +1173,10 @@ def test_eu_funded_irregularity_needs_eu_funding_and_another_flag() -> None:
     _assert_contract(by_id["eop:1"])
     assert by_id["eop:1"]["details_json"]["other_rules"] == ["exceptional_procedure"]
     assert "OLAF" in by_id["eop:1"]["explanation"]
-    assert "248а" in by_id["eop:1"]["law_ref"]
+    # Criminal Code (чл. 248а НК) is no longer cited -- only the administrative
+    # reporting duty; the site never asserts a crime.
+    assert "НК" not in by_id["eop:1"]["law_ref"]
+    assert "OLAF" in by_id["eop:1"]["law_ref"]
 
 
 # --- price_unverifiable -------------------------------------------------------

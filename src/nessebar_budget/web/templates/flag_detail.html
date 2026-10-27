@@ -18,6 +18,8 @@
     {% endif %}
     <p class="ai-note">Изчислено автоматично от правилото „{{ f.rule_label }}" с фиксирани прагове върху
     официални данни — без изкуствен интелект. <a href="{{ root }}methodology.html#no-ai">Как работи</a></p>
+    <p class="footnote"><strong>Този сигнал е автоматично установено несъответствие, а не доказателство за
+    нарушение.</strong> Той е повод да се поискат и прегледат конкретни документи.</p>
   </section>
 
   {% if f.law_ref %}
@@ -71,6 +73,22 @@
     <p class="footnote">{% if f.event_year %}Година на възникване: <strong>{{ f.event_year }}</strong> ·
     {% endif %}Първо засечен на <strong>{{ f.first_seen_at | bgdate }}</strong> · последно потвърден на
     <strong>{{ f.last_seen_at | bgdate }}</strong>.</p>
+  </section>
+
+  <section class="block">
+    <h2 class="block__title">Отговор или корекция</h2>
+    {% if f.responses %}
+    {% for r in f.responses %}
+    <div class="response">
+      <p class="footnote"><strong>{{ r.sender or "—" }}</strong>{% if r.date %} · {{ r.date }}{% endif %}</p>
+      <p>{{ r.text }}</p>
+    </div>
+    {% endfor %}
+    {% endif %}
+    <p class="block__sub">Засегнати сте от този сигнал (изпълнител, институция или длъжностно лице)? Имате
+    право на отговор или корекция — публикуваме го до 7 дни. Виж
+    <a href="{{ root }}methodology.html#reply">Право на отговор</a>.</p>
+    <a class="btn btn--ghost" href="mailto:osnesebar@gmail.com?subject={{ ('Отговор или корекция по сигнал #' ~ f.id ~ ' — ' ~ f.rule_label) | urlencode }}">Отговор или корекция</a>
   </section>
 
   <section class="block card">

@@ -112,6 +112,7 @@ RULE_TIERS: dict[str, str] = {
     "bid_at_ceiling": TIER_SIGNAL,
     "missing_annual_report": TIER_SIGNAL,
     "related_party": TIER_SIGNAL,
+    "name_match": TIER_SIGNAL,
     "person_concentration": TIER_SIGNAL,
     "young_company": TIER_SIGNAL,
     "company_status": TIER_SIGNAL,

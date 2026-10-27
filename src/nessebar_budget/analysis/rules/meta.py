@@ -7,9 +7,9 @@ EU fund (see `linking._EU_TEXT_RE`; a bare "Европейския съюз" is 
 not enough, it mostly appears in insurance-territory clauses).
 
 Irregularities involving EU funds are reported to the programme's managing
-authority and to OLAF; misuse of EU funds is a crime under чл. 248а of the
-Наказателен кодекс (cited per the project brief -- the НК is NOT among the
-texts in `docs/law/`, so this citation is not locally verified).
+authority and to OLAF. (Public signal text cites only the administrative
+reporting duty, not any Criminal Code article -- the site never asserts a
+crime.)
 """
 
 from __future__ import annotations
@@ -78,9 +78,8 @@ def eu_funded_irregularity_flags(
                     "Този договор е финансиран (изцяло или частично) от Европейския съюз и има поне "
                     "един друг сигнал на този сайт. Нередностите при европейски средства се "
                     "докладват на управляващия орган на програмата и на Европейската служба за "
-                    "борба с измамите (OLAF), а злоупотребата с такива средства е престъпление по "
-                    "чл. 248а от Наказателния кодекс. Ако другите сигнали получат невинно "
-                    "обяснение, отпада и този."
+                    "борба с измамите (OLAF). Ако другите сигнали получат невинно обяснение, "
+                    "отпада и този."
                 ),
                 documents=[
                     "договор за безвъзмездна финансова помощ",
@@ -96,10 +95,7 @@ def eu_funded_irregularity_flags(
                     "other_rules": rule_list,
                     "twin": index.twin.get(subject_id),
                 },
-                law_ref=(
-                    "чл. 248а НК (не е сред текстовете в docs/law); докладване на нередности "
-                    "пред управляващия орган и OLAF"
-                ),
+                law_ref="докладване на нередности пред управляващия орган на програмата и OLAF",
                 procurement_id=record.get("id"),
                 sources=sources,
             )
