@@ -1,0 +1,66 @@
+name: OSN decisions sync
+
+# Copies council decisions newly published on os-nessebar.eu to the OSN site:
+# compares the council's listing with what OSN already holds, prints each new
+# session's page to PDF and uploads it. The council publishes about one
+# session a month, a few days after it is held, so a weekly check picks each
+# one up within a week and does nothing the rest of the time.
+#
+# Needs three repository secrets: OSN_API_URL (e.g. https://host, no trailing
+# slash), OSN_USERNAME, OSN_PASSWORD. A manual run defaults to a dry run: the
+# PDFs land in the run's artifacts and nothing is uploaded.
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only render the PDFs (see the run's artifacts); upload nothing"
+        type: boolean
+        default: true
+      limit:
+        description: "Send at most this many sessions, oldest first (0 = all)"
+        type: number
+        default: 0
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two overlapping runs would both see the same session as new and upload it twice.
+  group: osn-decisions-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          playwright install --with-deps chromium
+
+      - name: Sync new decisions
+        env:
+          OSN_API_URL: ${{ secrets.OSN_API_URL }}
+          OSN_USERNAME: ${{ secrets.OSN_USERNAME }}
+          OSN_PASSWORD: ${{ secrets.OSN_PASSWORD }}
+        run: python -m nessebar_budget.osn_sync ${{ inputs.dry_run && '--dry-run' || '' }} --limit ${{ inputs.limit || 0 }}
+
+      - name: Keep the rendered PDFs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osn-decisions
+          path: data/cache/osn_decisions
+          if-no-files-found: ignore

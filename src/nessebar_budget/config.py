@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
 
+    #: OSN site API (osn_sync): base URL and the account that uploads decisions.
+    osn_api_url: str | None = None
+    osn_username: str | None = None
+    osn_password: str | None = None
+
     database_url: str = "sqlite:///data/nessebar.db"
 
     data_dir: Path = Path("data")

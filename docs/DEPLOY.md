@@ -155,3 +155,21 @@ weekly` run to take somewhere around 10-15 minutes end to end — comfortably
 inside GitHub Actions' free-tier minutes for a once-a-week job on a public
 repo (public repos get unlimited free Actions minutes on standard runners;
 there is nothing to pay for here as long as the repo stays public).
+
+## OSN decisions sync (separate workflow)
+
+`.github/workflows/osn-decisions.yml` runs every Monday at 07:00 UTC and
+copies council decisions newly published on os-nessebar.eu to the OSN site
+(`nessebar_budget/osn_sync.py`). It is independent of the weekly pipeline
+and commits nothing. Add three repository secrets (same place as the
+Telegram ones):
+
+- `OSN_API_URL` — the OSN server's base URL, `https://…` with no trailing slash
+- `OSN_USERNAME`
+- `OSN_PASSWORD`
+
+A manual run (**Actions** → **OSN decisions sync** → **Run workflow**) is a
+dry run unless you untick the box: it uploads nothing and leaves the PDFs
+it would have sent in the run's `osn-decisions` artifact. The scheduled run
+uploads. A red run means a session could not be uploaded or its title has
+no protocol date; the log names it.
