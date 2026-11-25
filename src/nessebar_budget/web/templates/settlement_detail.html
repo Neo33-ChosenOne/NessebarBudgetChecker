@@ -8,6 +8,10 @@
   {{ s.kind | capitalize }}{% if s.ekatte %} · ЕКАТТЕ {{ s.ekatte }}{% elif s.ekatte_territory %} · в землището на ЕКАТТЕ {{ s.ekatte_territory }}{% endif %}
   · <a href="{{ root }}map.html">виж на картата</a>
   {% endcall %}
+  {{ m.help_box(["obekt", "plan", "kadastar", "ekatte"]) }}
+  {% if not s.all_years.objects_count and not s.contracts.count and not s.flags_count %}
+  <p class="empty">За това населено място няма обекти в капиталовата програма, договори или сигнали в наличните данни.</p>
+  {% endif %}
 
   <div class="stats stats--4" role="list">
     <div class="stat" role="listitem">
@@ -37,30 +41,31 @@
       <h2 class="block__title">По години</h2>
       <p class="block__sub">План и похарчено за {{ s.name }} — всяка година от последния наличен месечен отчет (декември, когато е наличен).</p>
     </div>
+    {% set show_delta = s.years | length > 1 %}
     <div class="table-wrap">
     <table class="table table--settlement-years table--stack">
       <thead>
-        <tr><th>Година</th><th class="num">План</th><th class="num">Похарчено</th><th class="num">Обекти</th><th class="num">Промяна спрямо предходната година</th></tr>
+        <tr><th>Година</th><th class="num">План</th><th class="num">Похарчено</th><th class="num">Обекти</th>{% if show_delta %}<th class="num">Промяна спрямо предходната година</th>{% endif %}</tr>
       </thead>
       <tbody>
-      {% set prev = none %}
+      {% set ns = namespace(prev=none) %}
       {% for y in s.years | sort %}
         {% set bucket = s.years[y] %}
         <tr{% if y in notes %} title="{{ notes[y] }}"{% endif %}>
-          <td class="muted-strong">{{ y }}{% if y in notes %}<span class="code-chip" title="{{ notes[y] }}">частичен отчет</span>{% endif %}</td>
+          <td class="muted-strong">{{ y }}{% if y in notes %} <span class="code-chip" title="{{ notes[y] }}">частичен отчет</span>{% endif %}</td>
           <td class="num">{{ m.cell_label("План") }}{{ bucket.plan | eur }}</td>
           <td class="num">{{ m.cell_label("Похарчено") }}{{ bucket.spent | eur }}</td>
           <td class="num">{{ m.cell_label("Обекти") }}{{ bucket.objects_count | num }}</td>
-          <td class="num">{{ m.cell_label("Промяна") }}
-          {% if prev is not none %}
-            {% set delta = bucket.spent - prev %}
+          {% if show_delta %}<td class="num">{{ m.cell_label("Промяна") }}
+          {% if ns.prev is not none %}
+            {% set delta = bucket.spent - ns.prev %}
             <span{% if delta > 0 %} class="is-over"{% endif %}>{{ "+" if delta >= 0 else "" }}{{ delta | eur }}</span>
           {% else %}<span class="muted">—</span>{% endif %}
-          </td>
+          </td>{% endif %}
         </tr>
-        {% set prev = bucket.spent %}
+        {% set ns.prev = bucket.spent %}
       {% else %}
-        <tr><td colspan="5" class="empty">Няма данни за капиталови обекти в {{ s.name }} в наличните отчети.</td></tr>
+        <tr><td colspan="{{ 5 if show_delta else 4 }}" class="empty">Няма данни за капиталови обекти в {{ s.name }} в наличните отчети.</td></tr>
       {% endfor %}
       </tbody>
     </table>

@@ -132,8 +132,19 @@ def test_required_pages_exist(built_site: Path) -> None:
         "data/locations.geojson",
         "data/location_parcels.geojson",
         "data/cadastre_index.json",
+        "data/search.json",
+        "data/cash_activities.csv",
+        "data/eu_funds.csv",
+        "data/natural_indicators.csv",
+        "cash/activities.html",
+        "cash/types.html",
+        "cash/income.html",
+        "cash/transfers.html",
+        "cash/financing.html",
         "static/style.css",
         "static/app.js",
+        "static/logo_white_landscape.png",
+        "static/logo_footer.png",
     ]:
         assert (built_site / rel).exists(), f"missing {rel}"
 
@@ -162,6 +173,98 @@ def test_no_absolute_links_or_assets(built_site: Path) -> None:
             if url.startswith("/") and not url.startswith("//"):
                 offenders.append((str(html_path.relative_to(built_site)), url))
     assert not offenders, f"absolute href/src found: {offenders[:10]}"
+
+
+@requires_db
+def test_internal_links_and_search_index_resolve(built_site: Path) -> None:
+    """Every page a visitor can be sent to exists: no page links to a file
+    that was not built (a consortium's joined EIKs once produced one), and
+    the home page's search index only points at real pages."""
+    broken = []
+    for html_path in built_site.rglob("*.html"):
+        for match in HREF_SRC_RE.finditer(html_path.read_text(encoding="utf-8")):
+            url = match.group("url").split("#")[0].split("?")[0]
+            if not url or re.match(r"[a-z]+:|//", url):
+                continue
+            if not (html_path.parent / url).resolve().exists():
+                broken.append((str(html_path.relative_to(built_site)), url))
+    assert not broken, f"links to pages that do not exist: {broken[:10]}"
+
+    index = json.loads((built_site / "data" / "search.json").read_text(encoding="utf-8"))
+    assert {"Населено място", "Фирма", "Договор"} <= {entry["k"] for entry in index}
+    assert all((built_site / entry["u"]).exists() for entry in index)
+
+
+def _amount(text: str) -> int:
+    return int(text.replace(",", ""))
+
+
+@requires_db
+def test_budget_section_is_layered_and_adds_up(built_site: Path) -> None:
+    """The budget section: an overview, one page per view of the same
+    report, then a page per spending type and per activity. The views are
+    the same money, so they must agree with the overview."""
+    cash = built_site / "cash"
+    pages = {
+        name: (cash / f"{name}.html").read_text(encoding="utf-8")
+        for name in ("index", "activities", "types", "income", "transfers", "financing")
+    }
+    overview = pages["index"]
+    figures = dict(
+        re.findall(r'<span class="stat__label">([^<]+)</span>\s*<span class="stat__value"><span class="figure">([\d,]+)', overview)
+    )
+    came_in = _amount(figures["Постъпило от началото на годината"])
+    paid = _amount(figures["Платено от началото на годината"])
+    # Every view links to the others, and the overview says where it is.
+    for html in pages.values():
+        assert 'class="subnav"' in html and 'href="../cash/financing.html"' in html
+    assert 'href="../cash/index.html" aria-current="page"' in overview
+
+    # Where the money comes from adds up to what came in ...
+    sources = re.findall(r'href="\.\./cash/(?:income|transfers)\.html">.*?<td class="num">([\d,]+) €', overview, flags=re.DOTALL)
+    assert len(sources) == 2 and abs(sum(map(_amount, sources)) - came_in) <= 2
+    # ... and the gap to what was paid is the one the page states.
+    gap = re.search(r"с <strong>([\d,]+) €</strong> повече", overview)
+    assert gap and abs(abs(came_in - paid) - _amount(gap.group(1))) <= 2
+    # Who pays (state / local / co-financing) and the areas both add up to it.
+    areas = re.findall(r'href="\.\./cash/activities\.html#f-\d">.*?<td class="num">([\d,]+) €', overview, flags=re.DOTALL)
+    assert areas and abs(sum(map(_amount, areas)) - paid) <= len(areas)
+
+    # One page per spending type, with a ready request for who was paid.
+    codes = re.findall(r'href="\.\./cash/(\d+)\.html"', pages["types"])
+    assert codes, "no spending types on cash/types.html"
+    html = (cash / f"{codes[0]}.html").read_text(encoding="utf-8")
+    assert "Кой получава тези пари?" in html and "ЗАЯВЛЕНИЕ" in html
+    assert "констатация" not in html  # that sentence belongs to requests about a signal
+    assert 'class="crumbs"' in html and 'href="../cash/types.html"' in html
+
+    # One page per activity; together they are all of the spending.
+    activities = re.findall(
+        r'href="\.\./cash/(activity-\d+)\.html">.*?</td>.*?<td class="num">.*?([\d,]+) €',
+        pages["activities"], flags=re.DOTALL,
+    )
+    assert activities, "no activities on cash/activities.html"
+    assert abs(sum(_amount(amount) for _, amount in activities) - paid) <= len(activities)
+    page = (cash / f"{activities[0][0]}.html").read_text(encoding="utf-8")
+    assert "За какво са платени парите в тази дейност" in page and "ЗАЯВЛЕНИЕ" in page
+    assert "Кой плаща тази дейност" in page
+
+
+@requires_db
+def test_people_figures_are_withheld_where_they_would_mislead(built_site: Path) -> None:
+    """Average pay is the site's own arithmetic, so the staff page shows it
+    only where it is sound: never for fewer than five posts."""
+    staff_page = built_site / "cash" / "staff.html"
+    if not staff_page.exists():
+        pytest.skip("no natural indicators in this database")
+    rows = re.findall(
+        r'data-sort-value="([\d.]+)">.*?</td>\s*<td class="num" data-sort-value="[\d.]+">.*?</td>\s*'
+        r'<td class="num" data-sort-value="([\d.]+)">',
+        staff_page.read_text(encoding="utf-8"), flags=re.DOTALL,
+    )
+    assert rows
+    assert all(float(average) == 0 for posts, average in rows if float(posts) < 5)
+    assert any(float(average) > 0 for _, average in rows)
 
 
 @requires_db
@@ -379,9 +482,13 @@ def test_rendered_amounts_use_comma_grouping(built_site: Path) -> None:
 def test_home_page_is_compact(built_site: Path) -> None:
     html = (built_site / "index.html").read_text(encoding="utf-8")
     assert html.count('class="issue"') <= 5
-    assert html.count('class="stat"') == 4
+    assert html.count('class="qcard"') == 6  # one card per section
+    assert 'data-site-search="data/search.json"' in html
     assert "Къде отиват парите" in html
-    assert "fonts.googleapis.com/css2?family=Inter" in html
+    assert "fonts.googleapis.com/css2?family=Lora" in html
+    # the OSN header: a way back to the parent site, with this section marked
+    assert 'href="https://osn.bg/home"' in html
+    assert '<a href="index.html" aria-current="true">Бюджет</a>' in html
     assert 'href="static/style.css?v=' in html and 'src="static/app.js?v=' in html
 
 

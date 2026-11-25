@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% set year = latest_period[:4] if latest_period else "" %}
+{% set budget_crumb = [("Бюджет", root ~ "cash/index.html")] %}
+{% block title %}Европейски проекти — Бюджет — Бюджетен монитор Несебър{% endblock %}
+{% block content %}
+<div class="container">
+  {% call m.page_head("", "Европейски проекти", crumbs=budget_crumb) %}
+  Освен бюджета си общината харчи и пари по европейски и други международни проекти. Те минават през отделни сметки и не са включени в сумите на останалите страници от този раздел. Тук са от началото на {{ funds.period[:4] }} г. до {{ funds.period | period }}.
+  <span class="page-head__note">Източник: месечните отчети за сметките за средства от Европейския съюз на nesebar.bg (файлове IB1 и IB3).</span>
+  {% endcall %}
+  {{ m.section_nav(cash_nav, "eu", root) }}
+  {{ m.help_box(["deynost", "paragraf", "kasovo", "transfer"]) }}
+
+  <div class="stats stats--2" role="list">
+    <div class="stat" role="listitem">
+      <span class="stat__label">Платено по европейски проекти</span>
+      <span class="stat__value">{{ m.figure(funds.spent) }}</span>
+      <span class="stat__note">От началото на годината до {{ funds.period | period }}</span>
+    </div>
+    <div class="stat" role="listitem">
+      <span class="stat__label">Спрямо разходите по бюджета</span>
+      <span class="stat__value"><span class="figure">{{ (funds.spent / latest.expense_total) | pct if latest and latest.expense_total else "—" }}</span></span>
+      <span class="stat__note">Бюджетът за същия период: {{ latest.expense_total | eur if latest else "—" }}</span>
+    </div>
+  </div>
+
+  {% for key, info in fund_ledgers.items() %}
+  {% set ledger = funds.ledgers.get(key) %}
+  {% if ledger and ledger.totals.get("разходи") %}
+  <section class="block">
+    <h2 class="group-title" id="{{ key | lower }}"><span>{{ info[0] }}</span><span>{{ ledger.totals["разходи"] | eur }}</span></h2>
+    <p class="block__sub">{{ info[1] }}. Получени по тази сметка от началото на годината: {{ ((ledger.totals.get("трансфери") or 0) + (ledger.totals.get("приходи") or 0)) | eur }}.</p>
+
+    {% if ledger.activities %}
+    <div class="table-wrap">
+    <table class="table table--bars table--stack">
+      <thead><tr><th class="col-par">Дял</th><th>Дейност и програма</th><th class="col-meter"><span class="visually-hidden">Относителен размер</span></th><th class="num">Платено</th></tr></thead>
+      <tbody>
+      {% for a in ledger.activities %}
+      <tr>
+        <td class="muted tnum">{{ (a.actual / ledger.totals["разходи"]) | pct }}</td>
+        <td>{% if a.code in activity_codes %}<a class="row-link" href="{{ root }}cash/activity-{{ a.code }}.html">{{ a.name }}</a>{% else %}<span class="strong">{{ a.name }}</span>{% endif %}{% if a.programme %}<span class="sub">Програма: {{ a.programme }}</span>{% endif %}</td>
+        <td class="col-meter">{{ m.meter(a.actual / ledger.activities[0].actual if ledger.activities[0].actual else 0, "accent" if loop.first else "muted") }}</td>
+        <td class="num">{{ a.actual | eur }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+
+    <details class="help">
+      <summary class="help__summary">{{ m.chevron() }}<span>За какво са платени парите по тази сметка</span></summary>
+      <div class="help__body">{{ m.ledger_table(ledger.types, "Вид разход", "Платено", paragraph_plain) }}</div>
+    </details>
+  </section>
+  {% endif %}
+  {% endfor %}
+
+  {% if funds.years | length > 1 %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Година по година</h2>
+      <p class="block__sub">Платено по европейски проекти за всяка цяла година, {{ funds.years[0].label }}–{{ funds.years[-1].label }} г. Сумите до 2025 г. са преизчислени от левове в евро по официалния курс.</p>
+    </div>
+    <div class="card">{{ m.vbar_chart(funds.years, fmt_eur, height=220, label="Платено по европейски проекти по години") }}</div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

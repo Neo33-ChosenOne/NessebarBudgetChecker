@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% set year = latest_period[:4] if latest_period else "" %}
+{% set budget_crumb = [("Бюджет", root ~ "cash/index.html")] %}
+{% block title %}Приходи — Бюджет — Бюджетен монитор Несебър{% endblock %}
+{% block content %}
+<div class="container">
+  {% call m.page_head("", "Приходи", crumbs=budget_crumb) %}
+  Парите, които общината събира сама: местни данъци, такси, наеми, продажби и глоби{% if latest_period %}, от началото на {{ year }} г. до {{ latest_period | period }}{% endif %}. Парите от държавата са на страница <a href="{{ root }}cash/transfers.html">От държавата</a>.
+  {% endcall %}
+  {{ m.section_nav(cash_nav, "income", root) }}
+  {{ m.help_box(["kasovo", "paragraf", "plan"]) }}
+
+  {% if not latest %}
+  <p class="empty">Няма заредени данни за изпълнението на бюджета.</p>
+  {% else %}
+  <div class="stats stats--2" role="list">
+    <div class="stat" role="listitem">
+      <span class="stat__label">Собствени приходи от началото на годината</span>
+      <span class="stat__value">{{ m.figure(latest.income_total) }}</span>
+      <span class="stat__note">Към {{ latest_period | period }}</span>
+    </div>
+    <div class="stat" role="listitem">
+      <span class="stat__label">Дял от всичко постъпило</span>
+      {% set came_in = (latest.income_total or 0) + (latest.transfers_total or 0) + (latest.temp_loans_total or 0) %}
+      <span class="stat__value"><span class="figure">{{ ((latest.income_total or 0) / came_in) | pct if came_in else "—" }}</span></span>
+      <span class="stat__note">Останалото идва от държавата и други бюджети</span>
+    </div>
+  </div>
+
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">По вид приход</h2>
+      <p class="block__sub">С подвидовете под всеки. Под сумата е планът за годината. Отрицателна сума означава пари, които общината е внесла обратно, например ДДС.</p>
+    </div>
+    {{ m.ledger_table(latest.income_paragraphs, "Вид приход", "Постъпило") }}
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

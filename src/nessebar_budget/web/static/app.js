@@ -27,19 +27,24 @@
     Array.prototype.forEach.call(headerRow.cells, function (th, index) {
       if (!th.hasAttribute("data-sort")) return;
       th.setAttribute("tabindex", "0");
-      th.setAttribute("role", "button");
-      th.setAttribute("aria-label", "Подреди по тази колона");
+      th.setAttribute("title", "Подреди по тази колона");
+      th.setAttribute("aria-sort", "none");
 
       function toggleSort() {
         var current = th.getAttribute("data-sort");
-        var direction = current === "asc" ? "desc" : "asc";
+        // Number columns start with the largest value: that is what people
+        // look for in a table of amounts.
+        var first = th.classList.contains("num") ? "desc" : "asc";
+        var direction = current === "none" ? first : current === "asc" ? "desc" : "asc";
 
         Array.prototype.forEach.call(headerRow.cells, function (otherTh) {
           if (otherTh !== th && otherTh.hasAttribute("data-sort")) {
             otherTh.setAttribute("data-sort", "none");
+            otherTh.setAttribute("aria-sort", "none");
           }
         });
         th.setAttribute("data-sort", direction);
+        th.setAttribute("aria-sort", direction === "asc" ? "ascending" : "descending");
 
         var rows = Array.prototype.slice.call(tbody.rows);
         rows.sort(function (rowA, rowB) {
@@ -64,6 +69,17 @@
     });
   }
 
+  // "Nothing matches" line, shown instead of an empty table or list.
+  function emptyNote(after) {
+    var note = document.createElement("p");
+    note.className = "empty";
+    note.hidden = true;
+    note.setAttribute("role", "status");
+    note.textContent = "Няма записи, които отговарят на търсенето и филтрите. Изчистете търсенето или изберете друг филтър.";
+    after.parentNode.insertBefore(note, after.nextSibling);
+    return note;
+  }
+
   function enableFiltering(table) {
     var wrap = table.closest("[data-table-container]");
     if (!wrap) return;
@@ -73,6 +89,7 @@
     var countEl = wrap.querySelector("[data-table-count]");
     if (!tbody) return;
     var rows = Array.prototype.slice.call(tbody.rows);
+    var note = emptyNote(table.closest(".table-wrap") || table);
 
     function applyFilters() {
       var query = searchInput ? searchInput.value.trim().toLowerCase() : "";
@@ -85,11 +102,13 @@
         });
         var show = matchesSearch && matchesFilters;
         row.hidden = !show;
-        if (show) visible += 1;
+        // data-no-count: a totals-style row that is not one of the things counted
+        if (show && !row.hasAttribute("data-no-count")) visible += 1;
       });
       if (countEl) {
         countEl.textContent = visible.toLocaleString("en-US");
       }
+      note.hidden = visible !== 0;
     }
 
     if (searchInput) {
@@ -114,6 +133,7 @@
     var countEl = container.querySelector("[data-table-count]");
     var activeTier = "";
     if (!rows.length) return;
+    var note = emptyNote(rows[0].parentNode);
 
     function applyFilters() {
       var query = searchInput ? searchInput.value.trim().toLowerCase() : "";
@@ -130,6 +150,7 @@
         if (show) visible += 1;
       });
       if (countEl) countEl.textContent = visible.toLocaleString("en-US");
+      note.hidden = visible !== 0;
     }
 
     if (searchInput) searchInput.addEventListener("input", applyFilters);
@@ -187,10 +208,94 @@
     });
   }
 
+  // Home page search across the whole site: places, companies, contracts.
+  // The index (data/search.json, one small row each) is fetched on first use.
+  function enableSiteSearch(form) {
+    var input = form.querySelector("input");
+    var out = form.querySelector("[data-site-search-results]");
+    var root = form.getAttribute("data-root") || "";
+    var index = null;
+    var loading = false;
+    var LIMIT = 12;
+
+    function say(text) {
+      var p = document.createElement("p");
+      p.className = "sitesearch__count";
+      p.textContent = text;
+      out.appendChild(p);
+    }
+
+    function render() {
+      var words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      out.textContent = "";
+      if (!words.length || !index) return;
+      var hits = index.filter(function (entry) {
+        return words.every(function (word) {
+          return entry.h.indexOf(word) !== -1;
+        });
+      });
+      if (!hits.length) {
+        say("Няма резултати. Опитайте с част от името или с друга дума.");
+        return;
+      }
+      say(
+        hits.length > LIMIT
+          ? "Показани са първите " + LIMIT + " от " + hits.length + " резултата. Добавете още една дума, за да ги стесните."
+          : hits.length === 1 ? "1 резултат" : hits.length + " резултата"
+      );
+      var list = document.createElement("ul");
+      hits.slice(0, LIMIT).forEach(function (entry) {
+        var item = document.createElement("li");
+        var link = document.createElement("a");
+        link.href = root + entry.u;
+        [["sitesearch__kind", entry.k], ["", entry.t], ["sub", entry.x]].forEach(function (part) {
+          if (!part[1]) return;
+          var span = document.createElement("span");
+          if (part[0]) span.className = part[0];
+          span.textContent = part[1];
+          link.appendChild(span);
+        });
+        item.appendChild(link);
+        list.appendChild(item);
+      });
+      out.appendChild(list);
+    }
+
+    function load() {
+      if (index || loading) return;
+      loading = true;
+      fetch(form.getAttribute("data-site-search"))
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (rows) {
+          rows.forEach(function (entry) {
+            entry.h = (entry.t + " " + (entry.x || "")).toLowerCase();
+          });
+          index = rows;
+          render();
+        })
+        .catch(function () {
+          loading = false;
+          out.textContent = "";
+          say("Търсенето не можа да се зареди. Презаредете страницата и опитайте отново.");
+        });
+    }
+
+    input.addEventListener("focus", load);
+    input.addEventListener("input", function () {
+      load();
+      render();
+    });
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+    });
+  }
+
   // "/" focuses the page's search field (as in most keyboard-first apps),
   // unless the user is already typing in a form control.
   function enableSearchShortcut() {
-    var search = document.querySelector("[data-table-search]");
+    var search = document.querySelector("[data-table-search], [data-site-search] input");
     if (!search) return;
     document.addEventListener("keydown", function (event) {
       if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -205,6 +310,7 @@
     Array.prototype.forEach.call(document.querySelectorAll("table[data-sortable]"), enableSorting);
     Array.prototype.forEach.call(document.querySelectorAll("table[data-filterable]"), enableFiltering);
     Array.prototype.forEach.call(document.querySelectorAll("[data-flag-filters]"), enableFlagFilters);
+    Array.prototype.forEach.call(document.querySelectorAll("[data-site-search]"), enableSiteSearch);
     enableCopyButtons();
     enableSearchShortcut();
   });

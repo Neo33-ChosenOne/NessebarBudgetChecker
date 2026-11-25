@@ -8,10 +8,9 @@
 {% block content %}
 <div class="container">
   {% call m.page_head("Карта", "Карта на разходите") %}
-  Къде отиват капиталовите разходи на общината, по населено място — сумирано от месечните отчети на
-  nesebar.bg (вижте <a href="{{ root }}settlements/index.html">пълната таблица по населени места</a> и
-  <a href="{{ root }}methodology.html#map">как е изчислена картата</a>).
+  Къде общината строи, ремонтира и купува, по населено място. Изберете кръг на картата или населено място от <a href="{{ root }}settlements/index.html">списъка</a>. Вижте и <a href="{{ root }}methodology.html#map">как е изчислена картата</a>.
   {% endcall %}
+  {{ m.help_box(["kapitalova", "kadastar", "ekatte"]) }}
 
   <div class="stats stats--4" role="list">
     <div class="stat" role="listitem">
@@ -69,7 +68,7 @@
     достъпен. Размерът на всеки кръг е пропорционален на корена квадратен от похарчените средства
     (по-голям кръг = непропорционално повече пари, не линейно), за избраната година.</p>
 
-    <details class="sources map__legend">
+    <details class="sources map__legend" open>
       <summary class="sources__summary">{{ m.chevron() }}<span>Легенда и бележки</span></summary>
       <div class="sources__body">
         <p>Всяка точка е населено място от Община Несебър. Размерът на кръга показва похарчени
@@ -187,7 +186,7 @@
       var yearLabel = currentYear === "all" ? "всички години" : currentYear;
       var marker = L.circleMarker(
         [f.geometry.coordinates[1], f.geometry.coordinates[0]],
-        { radius: radius, color: "#5e6ad2", weight: 1, fillColor: "#5e6ad2", fillOpacity: 0.45 }
+        { radius: radius, color: "#4296ff", weight: 1, fillColor: "#4296ff", fillOpacity: 0.45 }
       );
       marker.bindPopup(
         "<strong>" + props.name + "</strong> (" + yearLabel + ")<br>" +
@@ -264,12 +263,12 @@
       var props = f.properties;
       if (!locationMatchesYear(props)) return;
       var hasFlags = !!(props.flags && props.flags.length);
-      var fillColor = props.kind === "contract" ? "#f2994a" : "#5e6ad2";
+      var fillColor = props.kind === "contract" ? "#e07b24" : "#4296ff";
       var marker = L.circleMarker(
         [f.geometry.coordinates[1], f.geometry.coordinates[0]],
         {
           radius: hasFlags ? 7 : 5,
-          color: hasFlags ? "#eb5757" : fillColor,
+          color: hasFlags ? "#d93f3f" : fillColor,
           weight: hasFlags ? 3 : 1,
           fillColor: fillColor,
           fillOpacity: 0.9
@@ -284,7 +283,7 @@
   function renderParcelOutlines() {
     parcelOutlinesLayer.clearLayers();
     if (!parcelsGeo) return;
-    L.geoJSON(parcelsGeo, { style: { color: "#8a8f98", weight: 1, fillOpacity: 0.04 } })
+    L.geoJSON(parcelsGeo, { style: { color: "#56618a", weight: 1, fillOpacity: 0.04 } })
       .addTo(parcelOutlinesLayer);
   }
 

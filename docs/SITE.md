@@ -33,14 +33,19 @@ For CI/CD (GitHub Actions building and deploying this to Pages), see
 
 | Page | Content |
 |---|---|
-| `index.html` | Deliberately short (~3–4 desktop screens): hero, a 4-tile stat strip (contracts total, capital plan spent vs. plan with progress bar, cash YTD, open flags by severity), max 5 latest flags (one per rule first), one "contracts by year" chart, a 3-column "how it works", footer. |
+| `index.html` | Question-led start page: the headline question, a site-wide search box (see "Usability conventions"), six question cards (one per section, each with its headline number), a plain-words table of the five largest spending types this year, max 5 flags (one per rule first), one "contracts by year" chart, a 3-column "how it works", footer. |
 | `contracts/index.html` | Every ЦАИС ЕОП procurement (signed + open), client-side sortable/searchable/filterable table, per-year value chart. |
 | `contracts/<source_id>.html` | One page per procurement: all fields, matched SIGMA enrichment (if any), source link, applicable flags. |
 | `contractors/index.html` | Contractors aggregated from signed contracts: count, total value, share of total, single-bidder share. |
 | `contractors/<slug>.html` | One contractor's detail + contract list. `<slug>` is a URL-safe key, not always the raw EIK — see "Contractor identity" below. |
 | `budget/index.html` | Latest-month capital ledger (consolidated `Общо` unit): plan vs. spent by function, month-over-month plan changes (new/increased objects), full object table. |
 | `budget/<period>.html` | Same breakdown for one historical month (e.g. `budget/2026-08.html`). |
-| `cash/index.html` | Cash execution (B1) YTD by expenditure paragraph, biggest categories, optional Minfin quarterly comparison (Nessebar vs. median of all municipalities) when the quarterly workbook parses cleanly. |
+| `cash/index.html` | "Бюджет": the overview of the whole cash report, year to date. What came in (own revenue, and transfers from the state and other budgets) against what was paid, and the gap between them in one sentence; spending by the nine functions; spending by who funds it (state-delegated / local / co-financing); cash at the year's start and now, loans taken and repaid; a pointer to the EU-project ledgers, which sit outside the budget; then the optional Minfin quarterly comparison. Every block links to the page that breaks it down. |
+| `cash/activities.html`, `cash/types.html`, `cash/income.html`, `cash/transfers.html`, `cash/financing.html` | One page per view of the same report: spending by activity (grouped by function, each row opening `cash/activity-<code>.html`), spending by expenditure paragraph (each row opening `cash/<paragraph>.html`), own revenue, transfers and temporary loans (tables III and IV), and financing (table VI: loans, cash balances, plus the `NALICHNOST` breakdown of the closing cash by source, year-end cash and loans by year, and the third-party funds held, ledger K33). |
+| `cash/eu.html` | The EU-project ledgers (`fund_lines`, from the `IB1_*`/`IB3_*` workbooks): per ledger (KSF, RA, DES, DMP) what was paid, by activity and programme and by expenditure type, and the total per year since 2019. Written only when `fund_lines` has rows. |
+| `cash/staff.html` | Posts per activity for the newest year of natural indicators (`natural_indicators`), that year's salaries (§ 01-00: planned for a plan year, paid for a report year) and the average gross monthly pay per post, computed by the site and withheld below five posts or when it comes out under the minimum wage (`_staff_view` in `build.py`). Activity pages show the same in a "Хора и числа" block. Written only when the table has rows. |
+| `cash/<paragraph>.html` | One page per spending category that has money in it (e.g. `cash/1000.html` for Издръжка), opened by clicking its row on `cash/index.html` or on the home page. Built from the same B1 report: paid vs. adjusted plan, the same period a year earlier, the sub-categories (под-§§, via each row's `parent_paragraph`), the month-by-month amounts (differences of the cumulative figures) and full-year totals since 2016. The report never says who was paid, so the page ends with what can be asked for and a ready ЗДОИ request (headcount and average pay per unit for the pay categories in `PERSONNEL_PARAGRAPHS`, a list of payments with recipient otherwise). |
+| `cash/activity-<code>.html` | One page per activity that has money in it (e.g. `cash/activity-3311.html` for Детски градини), from the report's per-activity pages (`cash_activity_lines`): paid vs. adjusted plan, the same period a year earlier, every expenditure paragraph and sub-paragraph paid in that activity (each linking to its `cash/<paragraph>.html`), month by month, full years since 2016, and the same closing block with a ready ЗДОИ request. `cash/<paragraph>.html` shows the reverse: which activities a paragraph goes to, and under each sub-paragraph the three activities that take most of it. |
 | `flags/index.html` | All flags: a tier filter (segmented control: Всички / Нарушения / Сигнали / Непрозрачност) alongside severity/rule/**година** filters and search (all combine), tier+severity+rule chips per row, counts per tier and per severity. The row's date shows both the event year and the detection date (see "Event year" below) — a small bold year above the muted detection date, right-aligned next to the chips. Each row is a native `<details>`/`<summary>` — no JS needed to expand it — revealing the explanation, legal basis, documents to request (ЗДОИ), and a small numbers list parsed out of `details_json` (never the raw JSON), then a closed-by-default "Източници" box (see "Provenance box" below). Renders an empty state gracefully if no flags exist yet. |
 | `flags/<id>.html` | One permalink page per flag: title = rule label, tier + severity chips, message, explanation, legal basis, documents list, numbers, an "Източници" section (collapsible, closed by default), subject link, first/last-seen dates, a 3-step "Как да поискате документите" box, and a "Копирай текст за заявление" `<details>` with a static, pre-filled plain-text ЗДОИ request template (copy button via `static/app.js`). Linked from every flag row and from Telegram deep links `flags/#<id>` (the bare numeric `id` is the row's anchor on the index page too). |
 | `methodology.html` | Sources, update cadence, the eop/SIGMA dedupe heuristic, a "За какви нарушения следим" section (what misconduct the three tiers cover, in plain Bulgarian, incl. which Наказателен кодекс offences a *signal* may relate to once documents confirm it), a data-driven "Правила за сигнали" section (one entry per rule — label, tier, what it detects, thresholds, legal basis, suggested documents — built from `build.py`'s `METHODOLOGY_RULES`, content sourced from `docs/RULES.md`), "Какво можете да направите" (the ЗДОИ route and which bodies to signal — АДФИ, АОП, Сметна палата, managing authority/OLAF, prosecution only with evidence), and the "flags are not proof of wrongdoing" disclaimer. |
@@ -55,13 +60,17 @@ For CI/CD (GitHub Actions building and deploying this to Pages), see
 |---|---|
 | `contracts.csv` / `contracts.json` | One row per distinct `eop` procurement (514 at last build), with SIGMA enrichment columns (`bids_received`, `sigma_source_id`, `sigma_unp`, `sigma_eu_funded`) when a match was found. |
 | `budget_line_items.csv` | Every `budget_line_items` row, all months and units (not just the consolidated `Общо` one shown in the HTML pages), with `row_type` (`object` / `paragraph_subtotal` / `function_subtotal` / `grand_total`) pulled out of `extra_json`. |
-| `cash_execution.csv` | Every `cash_execution_lines` row, all months, both `приходи`/`разходи` sections. |
+| `cash_execution.csv` | Every `cash_execution_lines` row, all months: `section` is `приходи`, `разходи`, `трансфери`, `временни заеми`, `финансиране` or `наличности`; with the adjusted plan and the state / local / co-financing split of the actual. |
+| `eu_funds.csv` | Every `fund_lines` row (the EU-project and third-party-funds ledgers), all months since 2019. |
+| `natural_indicators.csv` | Every `natural_indicators` row: posts and the other head-counts per activity, per year, marked plan or report. |
+| `cash_activities.csv` | Every money-carrying row of the reports' per-activity pages, all months: `period`, `activity_code`, `activity_name`, `row_type` (`total` / `paragraph` / `subparagraph`), `paragraph`, `parent_paragraph`, `plan`, `actual` (EUR, cumulative from 1 January). |
 | `flags.json` | All flags: `tier`, `tier_label`, `severity`, `message`, `explanation`, `documents` (list), `law_ref`, `details`, `event_year` (int or null, see "Event year" below), `sources` (the raw `sources_json` provenance list, see docs/RULES.md), `subject_href`/`subject_label`, `permalink`, and the usual timestamps — whatever optional columns the live `flags` table currently has, see "Flag schema" below. |
 | `map.json` | GeoJSON `FeatureCollection`, one Point feature per settlement (`properties`: key/name/kind/ekatte/href, `all_years` and per-year `plan`/`spent`/`objects_count`, `contracts_count`/`contracts_total_eur`, `flags_count`), plus top-level `unassigned` (same shape, for objects with no recognised settlement), `years_available`, `notes` (which years used a fallback month instead of December) and `pins` (curated exact coordinates, see below). Consumed client-side by `map.html`'s own script — never embedded inline in the HTML. |
 | `settlements.csv` | The same per-settlement totals as `map.json`, flattened to one row per settlement (plus an `unassigned` row), for spreadsheet use. |
 | `locations.geojson` | GeoJSON `FeatureCollection`, one Point feature per budget object/contract placed at an exact cadastral parcel/street (see "Точни места" below) — `properties`: `id`, `kind`, `title`, `settlement`/`settlement_key`, `precision`, `cadnums`/`street`, `address`, `area_m2`, `proptype`, `usetype`, `amounts`, `display_amount`, `year` (contracts only), `href`, `flags`, `unresolved`, `source`. |
 | `location_parcels.geojson` | GeoJSON `FeatureCollection` of the parcel polygons backing `locations.geojson` (one Feature per distinct `cadnum` actually used, `properties.location_ids` lists which location(s) reference it) — for drawing outlines on the map. |
 | `meta.json` | Build timestamp, headline counts, the SIGMA-match statistics, and `locations` (located/total counts for budget objects and contracts) also quoted in `methodology.html`. |
+| `search.json` | Index for the home page's site-wide search: one small row per settlement, company and contract (`k` kind, `t` title, `x` extra searchable text, `u` page path). Not meant as a data export; see "Usability conventions". |
 
 ## Карта по населени места (the map feature)
 
@@ -324,25 +333,82 @@ Every flag-rendering template (`flags_index.html`, `flag_detail.html`,
 macro) consumes the *same* `_flag_view()`-shaped dict, so tier chips,
 messages and permalinks are consistent everywhere a flag appears.
 
+## Usability conventions
+
+The site is written for people with no knowledge of public finance. These
+conventions keep it that way; follow them when adding a page.
+
+- **Layers, top down.** A section with a lot in it opens on an overview that
+  answers the plain question in a sentence and a few numbers, and links
+  down: overview, then one page per view (`section_nav` macro: the same row
+  of links on each, current one marked), then a page per item. Pages two or
+  more levels down carry breadcrumbs (`page_head(..., crumbs=...)`). Rows
+  that open a page are clickable as a whole (`row-link--stretch`). Detail
+  that few need (all rows of a table, definitions) sits behind a native
+  `<details>`. The budget section (`cash/`) is the model.
+- **Computed figures say so, and are withheld when they would mislead.** The
+  average pay per post is the site's arithmetic on two official numbers: the
+  page says how it is computed, and it is not shown for fewer than five
+  posts or when it falls under the minimum wage.
+- **Section names are everyday words**, in the order a visitor's questions
+  come (`nav_items` in `base.html`): Разходи (`cash/`), Инвестиции
+  (`budget/`), Договори (`contracts/`), Фирми (`contractors/`), Населени
+  места (`settlements/`), Карта, Сигнали, Как работи (`methodology.html`),
+  plus Данни. URLs and file names keep their original technical names. Below
+  1160px the links sit behind a "Меню" button (a native `<details>`, no
+  script), so no section hides off-screen.
+- **Official terms are explained, not removed.** `GLOSSARY` in `build.py` is
+  the single place every specialist word is defined. Each page shows the
+  entries it uses in a closed "Какво означават думите на тази страница" box
+  (`help_box` macro in `_macros.html`); `methodology.html#glossary` lists them
+  all. `PARAGRAPH_PLAIN` gives the biggest spending categories a plain
+  description, always shown next to the official name.
+- **Signal wording stays cautious.** The three type labels (Несъответствие,
+  Сигнал, Непрозрачност) and the "повод за въпрос, не доказателство за
+  нарушение" framing are deliberate; plain-language edits must not make them
+  stronger. Glossary definitions describe what a thing is, never whether
+  anyone did wrong.
+- **Site-wide search** (home page): `build.py` writes `data/search.json`, one
+  small row per settlement, company and contract (`k` kind, `t` title, `x`
+  extra searchable text, `u` path). `enableSiteSearch` in `app.js` fetches it
+  on first use and matches every typed word as a substring.
+- **Tables**: sortable headers show `↕` before the first click and carry
+  `aria-sort`; number columns sort largest-first. The flags list is ordered
+  most important first (type, then severity, then newest).
+
 ## Design
 
-Linear-inspired, dark by default (`prefers-color-scheme: light` swaps the
-same tokens for an off-white theme). Everything is driven by the custom
-properties at the top of `static/style.css`: near-black canvas (`#08090a`,
-surfaces `#0f1011`/`#141516`), primary text `#f7f8f8`, secondary `#8a8f98`,
-hairline borders `rgba(255,255,255,0.08)`, one indigo accent (`#5e6ad2`) used
-only for the primary button, progress bars, the latest chart bar and focus
-rings. Spacing scale 4/8/12/16/24/32/48/64/96/128; 8px radii; no shadows and
-no gradients except the faint radial glow behind the home hero. Severity is
-shown as a coloured dot + text (red/orange/grey), never a filled badge.
-Tier reuses the same pattern with its own three colours (`violation`/`signal`
-share the high/warning severity colours, `opacity` gets its own muted
-blue-grey `--tier-opacity`) — see `tier_key`/`tier_label`/`tier_tooltip` in
-`build.py` and the `.dot--violation`/`.dot--signal`/`.dot--opacity` rules in
-`static/style.css`.
+Skinned to the parent site, Обществен Съвет Несебър (osn.bg), so the tracker
+reads as one of its sections. Light only, like the parent. Everything is
+driven by the custom properties at the top of `static/style.css`: white
+canvas, pale-blue surfaces (`#f7faff`/`#edf5ff`), and the three OSN brand
+colours exactly as osn.bg defines them: navy `#2d3d71` (text, headings, logo
+blocks, footer bar), sky blue `#4296ff` (nav bar, bars and fills) and gold
+`#eabd7e` (the beta pill). The sky blue is only 3:1 on white, so links and
+buttons use `--accent-text` (`#1a6ad6`), the same hue darkened to 5:1.
+Spacing scale 4/8/12/16/24/32/48/64/96/128; 5px radii, pill buttons.
+Severity is shown as a coloured dot + text (red/orange/grey), never a filled
+badge. Tier reuses the same pattern with its own three colours
+(`violation`/`signal` share the high/warning severity colours, `opacity` gets
+its own muted blue-grey `--tier-opacity`) — see
+`tier_key`/`tier_label`/`tier_tooltip` in `build.py` and the
+`.dot--violation`/`.dot--signal`/`.dot--opacity` rules in `static/style.css`.
 
-Type is Inter (Google Fonts, `system-ui` fallback) with tight tracking on
-headlines; every number uses `font-variant-numeric: tabular-nums`.
+**OSN header and footer.** `base.html` rebuilds the parent site's header from
+its own CSS (`.osn`): the logo bar with the diagonal navy cut, then the main
+nav bar with "Бюджет" marked as the current section. Every link goes to the
+origin in the `osn` variable at the top of `base.html`. The tracker's own nav
+sits below it and stays sticky once the OSN header scrolls away. The footer
+takes OSN's shape (navy logo block, diagonal cut, navy closing bar) around
+our own links and disclaimers. The two logos are `static/logo_white_landscape.png`
+and `static/logo_footer.png`.
+
+Type is Lora (Google Fonts, the OSN family, serif fallback). Columns of
+numbers (`.num`, `.tnum`, `.rows__num`) use `font-variant-numeric:
+tabular-nums`; running text does not, because Lora's tabular figures also
+widen the commas and spaces around them. `font-feature-settings: "locl" 0`
+on `body` turns off Lora's Bulgarian letterform alternates so the same words
+look the same as on osn.bg, which is served as `lang="en"`.
 
 **Numbers.** All rendered numbers go through three Jinja filters defined in
 `build.py`: `num` (`12,347,905`), `eur` (`12,347,905 €`) and `pct` (a

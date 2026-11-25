@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% set year = period[:4] %}
+{% block title %}{{ a.name }} — Разходи — Бюджетен монитор Несебър{% endblock %}
+{% block content %}
+<div class="container">
+  {% call m.page_head("", a.name, crumbs=[("Бюджет", root ~ "cash/index.html"), ("Разходи по дейности", root ~ "cash/activities.html")]) %}
+  Колко е платено за тази дейност от началото на {{ year }} г. до {{ period | period }}, за какво точно и как се променя във времето.
+  <span class="page-head__note">В отчета на общината: дейност {{ short }} от функция „{{ function }}“, отчет „Б1“ на nesebar.bg{% if a.source_row %}, лист OTCHET, ред {{ a.source_row }}{% endif %}.</span>
+  {% endcall %}
+  {{ m.section_nav(cash_nav, "activities", root) }}
+  {{ m.help_box(["deynost", "funkcia", "darzhavni", "kasovo", "paragraf", "plan", "zdoi"]) }}
+
+  <div class="stats stats--3" role="list">
+    <div class="stat" role="listitem">
+      <span class="stat__label">Платено от началото на {{ year }} г.</span>
+      <span class="stat__value">{{ m.figure(a.actual) }}</span>
+      <span class="stat__note">{% if expense_total %}<strong>{{ (a.actual / expense_total) | pct }}</strong> от всички разходи на общината{% endif %}</span>
+    </div>
+    {% if a.plan %}
+    <div class="stat" role="listitem">
+      <span class="stat__label">План за {{ year }} г.</span>
+      <span class="stat__value">{{ m.figure(a.plan) }}</span>
+      {{ m.meter(a.actual / a.plan, label=((a.actual / a.plan) | pct) ~ " от плана") }}
+      <span class="stat__note"><strong>{{ (a.actual / a.plan) | pct }}</strong> от плана са платени{% if a.actual > a.plan %}, тоест повече от предвиденото{% endif %}</span>
+    </div>
+    {% endif %}
+    {% if same_period_last_year %}
+    <div class="stat" role="listitem">
+      <span class="stat__label">Същият период на {{ year | int - 1 }} г.</span>
+      <span class="stat__value">{{ m.figure(same_period_last_year) }}</span>
+      <span class="stat__note">Тази година: <strong>{{ ((a.actual - same_period_last_year) / same_period_last_year) | pct }}</strong> {{ "повече" if a.actual >= same_period_last_year else "по-малко" }}</span>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if a.state or a.local or a.cofinance %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Кой плаща тази дейност</h2>
+      <p class="block__sub">Чии са парите: на държавата, която е възложила дейността, или на общината.</p>
+    </div>
+    {{ m.funding_split(a.state, a.local, a.cofinance) }}
+  </section>
+  {% endif %}
+
+  {% if people and (people.staff or people.indicators) %}
+  {% set basis_text = "по план" if people.basis == "план" else "по отчет" %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Хора и числа</h2>
+      <p class="block__sub">От годишния файл „натурални показатели“ на общината за {{ people.year }} г., {{ basis_text }}. <a href="{{ root }}cash/staff.html">Всички дейности</a></p>
+    </div>
+    <div class="stats stats--{{ 2 if people.staff else 1 }}" role="list">
+      {% if people.staff %}
+      <div class="stat" role="listitem">
+        <span class="stat__label">Щатни бройки</span>
+        <span class="stat__value"><span class="figure">{{ people.staff | count }}</span></span>
+        <span class="stat__note">{% for i in people.indicators if i.code | int < 200 %}{{ i.name }}: {{ i.value | count }}{{ "; " if not loop.last }}{% endfor %}</span>
+      </div>
+      <div class="stat" role="listitem">
+        <span class="stat__label">Средна брутна заплата на месец</span>
+        {% if people.average %}
+        <span class="stat__value">{{ m.figure(people.average) }}</span>
+        <span class="stat__note">Изчислено от сайта: {{ people.salaries | eur }} заплати за годината {{ basis_text }}, разделени на щатните бройки и на 12 месеца</span>
+        {% else %}
+        <span class="stat__value"><span class="figure figure--muted">—</span></span>
+        <span class="stat__note">{{ people.no_average or "Няма данни за заплатите в тази дейност." }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% set extra = [] %}
+    {% for i in people.indicators if i.code | int >= 200 %}{% set _ = extra.append(i) %}{% endfor %}
+    {% if extra %}
+    <dl class="facts">
+      {% for i in extra %}
+      <div class="facts__row"><dt>{{ i.name | capitalize }}</dt><dd class="tnum">{{ i.value | count }}</dd></div>
+      {% endfor %}
+    </dl>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% set paid_lines = lines | selectattr("actual") | list %}
+  {% if paid_lines %}
+  {% set max_line = paid_lines[0].actual %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">За какво са платени парите в тази дейност</h2>
+      <p class="block__sub">По вид разход, подредени по размер, с подвидовете под всеки. Под сумата е планът за годината. Изберете вид разход, за да го видите за цялата община.</p>
+    </div>
+    <div class="table-wrap">
+    <table class="table table--bars table--stack">
+      <thead><tr><th class="col-par">§</th><th>Вид разход</th><th class="col-meter"><span class="visually-hidden">Относителен размер</span></th><th class="num">Платено</th></tr></thead>
+      <tbody>
+      {% for l in paid_lines %}
+      <tr>
+        <td class="muted tnum">{{ l.paragraph }}</td>
+        <td><a class="row-link" href="{{ root }}cash/{{ l.paragraph }}.html">{{ paragraph_names.get(l.paragraph, "§ " ~ l.paragraph) }}</a>{% if paragraph_plain.get(l.paragraph | string) %}<span class="sub">{{ paragraph_plain[l.paragraph | string] }}</span>{% endif %}</td>
+        <td class="col-meter">{{ m.meter(l.actual / max_line if max_line else 0, "accent" if loop.first else "muted") }}</td>
+        <td class="num">{{ m.cell_label("Платено") }}{{ l.actual | eur }}{% if l.plan %}<span class="sub{% if l.actual > l.plan %} is-over{% endif %}">план {{ l.plan | eur }}{% if l.actual > l.plan %}, платено е повече{% endif %}</span>{% endif %}</td>
+      </tr>
+      {% for c in l.children if c.actual %}
+      <tr class="subrow">
+        <td class="muted tnum">{{ c.paragraph }}</td>
+        <td>{{ paragraph_names.get(c.paragraph, "под-§ " ~ c.paragraph) | capitalize }}</td>
+        <td class="col-meter"></td>
+        <td class="num">{{ m.cell_label("Платено") }}{{ c.actual | eur }}</td>
+      </tr>
+      {% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if months | length > 1 %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Месец по месец през {{ year }} г.</h2>
+      <p class="block__sub">Колко е платено през всеки месец. Отчетът е с натрупване от 1 януари, затова сумата за месеца е разликата спрямо предходния.</p>
+    </div>
+    <div class="card">{{ m.vbar_chart(months, fmt_eur, height=220, label="Платено по месеци през " ~ year ~ " г.") }}</div>
+  </section>
+  {% endif %}
+
+  {% if years | selectattr("value") | list | length > 1 %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Година по година</h2>
+      <p class="block__sub">Платено за цялата година, {{ years[0].label }}–{{ years[-1].label }} г. Сумите до 2025 г. са преизчислени от левове в евро по официалния курс.</p>
+    </div>
+    <div class="card">{{ m.vbar_chart(years, fmt_eur, height=220, label="Платено по години") }}</div>
+  </section>
+  {% endif %}
+
+  <section class="block card">
+    <h2 class="block__title">Кой получава тези пари?</h2>
+    <p class="block__sub">Отчетът на общината показва колко е платено за тази дейност и за какъв вид разход, но не казва на кои фирми и за какво точно. Заплатите на отделните служители са лични данни и не се публикуват. Част от отговора е в <a href="{{ root }}contracts/index.html">договорите на общината</a>. Останалото всеки има право да поиска: списък на плащанията и обобщени данни за броя на заетите и средната заплата.</p>
+    <ol class="steps">
+      <li>Подайте писмено заявление по Закона за достъп до обществена информация (ЗДОИ) до кмета на Община Несебър. Готовият текст е по-долу.</li>
+      <li>Общината е длъжна да отговори в 14-дневен срок (чл. 28 ЗДОИ; може да се удължи с до 10 дни при обемиста информация).</li>
+      <li>При отказ или липса на отговор в срока можете да обжалвате пред Административен съд – Бургас.</li>
+    </ol>
+    <details class="copy-block">
+      <summary>Копирай текст за заявление</summary>
+      <pre class="copy-block__pre" data-copy-source>{{ zdoi_template }}</pre>
+      <button type="button" class="btn btn--ghost btn--sm copy-block__btn" data-copy-button>Копирай текста</button>
+    </details>
+  </section>
+</div>
+{% endblock %}

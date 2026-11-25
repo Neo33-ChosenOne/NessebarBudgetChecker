@@ -1,56 +1,63 @@
 /* Бюджетен монитор Несебър — design system.
  *
- * Linear-inspired: near-black canvas, hairline borders, one indigo accent,
- * Inter with tight tracking on headlines, tabular numbers everywhere.
- * Dark is the default; `prefers-color-scheme: light` inverts the same tokens.
- * Spacing scale: 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 / 96 / 128.
- * No shadows, no gradients (the faint hero glow is the only exception). */
+ * Skinned to the parent site, Обществен Съвет Несебър (osn.bg), so the
+ * tracker reads as one of its sections: white canvas, navy text, the OSN
+ * sky blue and gold as accents, Lora everywhere, tabular numbers.
+ * Light only, like the parent site.
+ * Spacing scale: 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 / 96 / 128. */
 
 /* ------------------------------------------------------------------ tokens */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  --bg: #08090a;
-  --surface-1: #0f1011;
-  --surface-2: #141516;
-  --surface-hover: #17181a;
-  --text: #f7f8f8;
-  --text-body: #d0d6e0;
-  --text-2: #8a8f98;
-  --text-3: #62666d;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-2: rgba(255, 255, 255, 0.13);
-  --accent: #5e6ad2;
-  --accent-hover: #6e79d6;
-  --accent-text: #9ba3ff;
+  /* The three OSN brand colours, exactly as osn.bg defines them. */
+  --navy: #2d3d71;
+  --blue: #4296ff;
+  --gold: #eabd7e;
+
+  --bg: #ffffff;
+  --surface-1: #f7faff;
+  --surface-2: #edf5ff;
+  --surface-hover: #e3efff;
+  --text: var(--navy);
+  --text-body: #1f2a44;
+  --text-2: #4a5580;
+  --text-3: #5f698e;
+  --border: rgba(45, 61, 113, 0.12);
+  --border-2: rgba(45, 61, 113, 0.24);
+  /* --blue is 3:1 on white: fine for bars and fills, too light for text.
+     --accent-text is the same hue darkened to 5:1 for links and buttons. */
+  --accent: var(--blue);
+  --accent-hover: var(--navy);
+  --accent-text: #1a6ad6;
   --on-accent: #ffffff;
-  --focus-ring: rgba(94, 106, 210, 0.45);
-  --track: rgba(255, 255, 255, 0.07);
-  --bar: #2b2d32;
-  --bar-hover: #3a3d44;
-  --bar-muted: #4b4f57;
-  --nav-bg: rgba(8, 9, 10, 0.72);
-  --glow: rgba(94, 106, 210, 0.2);
+  --focus-ring: rgba(66, 150, 255, 0.35);
+  --track: rgba(45, 61, 113, 0.08);
+  --bar: #cfdcf2;
+  --bar-hover: #b5c8ea;
+  --bar-muted: #9fb3d9;
+  --nav-bg: rgba(255, 255, 255, 0.9);
+  --glow: rgba(66, 150, 255, 0.14);
 
-  --sev-high: #eb5757;
-  --sev-warning: #f2994a;
-  --sev-info: #8a8f98;
+  --sev-high: #d93f3f;
+  --sev-warning: #e07b24;
+  --sev-info: #5f698e;
 
   /* Tiers are a coarser, plain-language read of a flag (violation/signal/
      opacity) -- see docs/RULES.md and the flags pages. Violation/signal
      reuse the high/warning severity colours (a tier violation is always
      high-stakes, a signal always needs a second look); opacity gets its own
      muted blue-grey ("legal, but unverifiable without more documents"). */
-  --tier-opacity: #6c86ab;
+  --tier-opacity: #42618c;
 
-  --font: "Inter", "InterVariable", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font: "Lora", "Times New Roman", Times, "Noto Serif", serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
 
   --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px;
   --s-6: 32px; --s-7: 48px; --s-8: 64px; --s-9: 96px; --s-10: 128px;
 
-  --radius: 8px;
-  --radius-sm: 6px;
+  --radius: 5px;
+  --radius-sm: 4px;
   --nav-h: 56px;
   --gutter: 20px;
   --container: 1120px;
@@ -62,36 +69,6 @@
 }
 @media (min-width: 1200px) {
   :root { --section-gap: 112px; }
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --bg: #fafafa;
-    --surface-1: #ffffff;
-    --surface-2: #f4f4f5;
-    --surface-hover: #f2f2f4;
-    --text: #0f1011;
-    --text-body: #2b2e33;
-    --text-2: #5f636b;
-    --text-3: #8a8f98;
-    --border: rgba(0, 0, 0, 0.08);
-    --border-2: rgba(0, 0, 0, 0.13);
-    --accent: #5e6ad2;
-    --accent-hover: #4f5bc4;
-    --accent-text: #4b56bd;
-    --focus-ring: rgba(94, 106, 210, 0.35);
-    --track: rgba(0, 0, 0, 0.06);
-    --bar: #dcdde2;
-    --bar-hover: #c9cbd2;
-    --bar-muted: #b4b7bf;
-    --nav-bg: rgba(250, 250, 250, 0.78);
-    --glow: rgba(94, 106, 210, 0.13);
-    --sev-high: #d93f3f;
-    --sev-warning: #e07b24;
-    --sev-info: #8a8f98;
-    --tier-opacity: #42618c;
-  }
 }
 
 /* ------------------------------------------------------------------ base */
@@ -109,9 +86,12 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.6;
-  font-feature-settings: "cv11", "ss01";
+  /* OSN is lang="en", so Lora draws its default Cyrillic there. Ours is
+     lang="bg", which would switch on the Bulgarian alternates (в, т, Л, Д)
+     and make the same words look different; turn them off to match. */
+  font-feature-settings: "locl" 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -120,12 +100,12 @@ body {
 img, svg { display: block; }
 svg { flex-shrink: 0; }
 
-h1, h2, h3, h4 { margin: 0; color: var(--text); font-weight: 600; }
+h1, h2, h3, h4 { margin: 0; color: var(--text); font-weight: 700; }
 p, ul, ol, dl, figure { margin: 0; }
 
 a { color: inherit; text-decoration: none; }
 a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--navy);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -144,7 +124,7 @@ code {
   color: var(--text-body);
 }
 
-::selection { background: rgba(94, 106, 210, 0.35); }
+::selection { background: rgba(66, 150, 255, 0.3); }
 
 .container {
   width: 100%;
@@ -159,7 +139,7 @@ code {
   top: 0;
   z-index: 100;
   padding: var(--s-2) var(--s-4);
-  background: var(--accent);
+  background: var(--navy);
   color: var(--on-accent);
   border-radius: var(--radius);
 }
@@ -173,9 +153,9 @@ code {
   white-space: nowrap; border: 0;
 }
 
-/* every number lines up */
-.tnum, .num, .figure, .chip, time, .stat__note, .toolbar__count,
-.chart text, .rows__num, .facts dd, .sub { font-variant-numeric: tabular-nums; }
+/* Numbers line up in columns only: Lora's tabular figures also widen the
+   commas and spaces around them, which looks loose in running text. */
+.tnum, .num, .rows__num { font-variant-numeric: tabular-nums; }
 
 /* ------------------------------------------------------------------ type helpers */
 .eyebrow {
@@ -226,14 +206,14 @@ code {
 .link-arrow:hover { color: var(--accent-text); }
 .link-arrow:hover .chevron { transform: translateX(2px); color: currentColor; }
 
-.prose a, .page-head__sub a, .footnote a, .block__sub a, .empty a, .facts dd a {
+.prose a, .page-head__sub a, .footnote a, .footer__note a, .block__sub a, .empty a, .facts dd a {
   color: var(--text);
   text-decoration: underline;
   text-decoration-color: var(--border-2);
   text-underline-offset: 3px;
   transition: color 0.15s ease, text-decoration-color 0.15s ease;
 }
-.prose a:hover, .page-head__sub a:hover, .footnote a:hover, .block__sub a:hover,
+.prose a:hover, .page-head__sub a:hover, .footnote a:hover, .footer__note a:hover, .block__sub a:hover,
 .empty a:hover, .facts dd a:hover {
   color: var(--accent-text);
   text-decoration-color: currentColor;
@@ -266,16 +246,15 @@ code {
   border: 1px solid transparent;
   border-radius: 999px;
   font-size: 14px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
-.btn--primary { background: var(--accent); color: var(--on-accent); }
+.btn--primary { background: var(--accent-text); color: var(--on-accent); }
 .btn--primary:hover { background: var(--accent-hover); }
-.btn--ghost { border-color: var(--border-2); color: var(--text); background: transparent; }
-.btn--ghost:hover, .btn--ghost[aria-current="page"] { background: var(--surface-2); border-color: var(--border-2); }
+.btn--ghost { border-color: var(--accent); color: var(--accent-text); background: var(--bg); }
+.btn--ghost:hover, .btn--ghost[aria-current="page"] { background: var(--accent-text); border-color: var(--accent-text); color: var(--on-accent); }
 .btn--sm { height: 28px; padding: 0 12px; font-size: 13px; }
 
 @media (max-width: 719px) {
@@ -285,7 +264,116 @@ code {
   .btn--sm { min-height: 44px; padding: 0 14px; }
 }
 
-/* ------------------------------------------------------------------ nav */
+/* ------------------------------------------------------------------ OSN header
+   The parent site's header (osn.bg), rebuilt from its own CSS: a logo bar
+   with a diagonal navy cut, then the main nav bar overlapping it by 20px.
+   Phones get OSN's compact navy bar and the nav as a strip that scrolls
+   sideways. White on --blue is OSN's own pairing; it is 3:1, so the labels
+   stay bold and at full opacity (OSN dims them to 75%). */
+.osn a:focus-visible, .footer__logo:focus-visible { outline-color: #fff; }
+
+.osn__logobar { display: flex; height: 80px; background: var(--navy); }
+.osn__logo { display: flex; align-items: center; padding-inline: var(--gutter); }
+.osn__logo img { width: auto; height: 52px; }
+.osn__title, .osn__logobar .osn__cut, .footer .osn__cut { display: none; }
+.osn__cut { flex: none; background: var(--navy); }
+
+.osn__nav {
+  --pad: 12px;
+  display: flex;
+  height: 48px;
+  background: var(--blue);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.osn__nav::-webkit-scrollbar { display: none; }
+@media (max-width: 1000px) {
+  /* Scrolls sideways below this width; fade the right edge as a hint. */
+  .osn__nav {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent 100%);
+  }
+}
+.osn__nav ul {
+  display: flex;
+  flex: 1 0 auto;
+  justify-content: space-evenly;
+  margin: 0;
+  padding: 0 0 0 calc(var(--gutter) - var(--pad));
+  list-style: none;
+}
+.osn__nav li { display: flex; }
+.osn__nav a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--pad);
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* OSN's 3px underline: grows on hover, stays under the current section. */
+.osn__nav a::before {
+  content: "";
+  position: absolute;
+  inset: auto var(--pad) 0;
+  height: 3px;
+  background: var(--navy);
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
+}
+.osn__nav a:hover::before, .osn__nav a[aria-current]::before { transform: scaleX(1); }
+.osn__nav .osn__cut {
+  width: 47px;
+  margin-right: -1px;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+.osn__projects { flex: none; background: var(--navy); }
+.osn__nav .osn__projects { padding-inline: var(--s-5); }
+.osn__projects::before { bottom: 2px; background: #fff; }
+
+@media (min-width: 768px) {
+  .osn__logobar { height: 150px; background: var(--bg); }
+  .osn__logo { flex: 0 1 300px; justify-content: center; padding: 0; background: var(--navy); }
+  .osn__logo img { height: 80px; }
+  .osn__logobar .osn__cut {
+    display: block;
+    width: 100px;
+    margin-left: -1px;
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+  .osn__title {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    padding: 0 var(--s-4) 20px;
+    color: var(--navy);
+    font-size: clamp(1.6rem, 3.2vw, 2.7rem);
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+  }
+  .osn__nav {
+    position: relative;
+    width: min(90%, calc(var(--container) + 2 * var(--gutter)));
+    height: 70px;
+    margin: -20px auto 0;
+    border-radius: 5px;
+  }
+  .osn__nav ul { padding: 0; }
+  /* 25% wide like OSN, but gives way before the links have to scroll. */
+  .osn__nav .osn__projects { flex: 0 1 25%; }
+  .nav { margin-top: var(--s-2); }
+}
+
+/* ------------------------------------------------------------------ nav
+   The tracker's own sections. Wide screens show them in one row; below
+   1160px they sit behind a "Меню" button, so every section is one tap away
+   and none of them hides in a strip that scrolls sideways. */
 .nav {
   position: sticky;
   top: 0;
@@ -297,56 +385,30 @@ code {
 }
 
 .nav__inner {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-areas: "brand data" "links links";
+  display: flex;
   align-items: center;
-  column-gap: var(--s-4);
+  justify-content: space-between;
+  gap: var(--s-4);
+  min-height: 52px;
 }
 
 .wordmark {
-  grid-area: brand;
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   height: 52px;
+  overflow: hidden;
   font-size: 14px;
   font-weight: 600;
-  letter-spacing: -0.015em;
   color: var(--text);
   white-space: nowrap;
 }
 .wordmark__mark { color: var(--text); }
 .wordmark__muted { color: var(--text-2); font-weight: 500; }
 
-.nav__data { grid-area: data; }
-
-.nav__links {
-  grid-area: links;
-  display: flex;
-  gap: var(--s-1);
-  margin-inline: calc(-1 * var(--gutter));
-  padding: 0 var(--gutter) var(--s-2);
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-.nav__links::-webkit-scrollbar { display: none; }
-
-@media (max-width: 999px) {
-  /* Subtle right-edge fade hinting there are more links to scroll to. A
-     mask on the scroll container itself fades its own rendered content
-     (not an overlay color, which would have to match whatever page
-     background happens to sit behind the translucent nav) — so it reads
-     correctly regardless of light/dark theme or scroll position. */
-  .nav__links {
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent 100%);
-    mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent 100%);
-  }
-}
-
+.nav__links, .nav__data { display: none; }
 .nav__links a {
-  flex: none;
   padding: 5px 10px;
   border-radius: var(--radius-sm);
   font-size: 13px;
@@ -355,45 +417,50 @@ code {
   white-space: nowrap;
   transition: color 0.15s ease, background-color 0.15s ease;
 }
-.nav__links a:first-child { margin-left: -10px; }
 .nav__links a:hover { color: var(--text); }
 .nav__links a[aria-current="page"] { color: var(--text); background: var(--surface-2); }
 
-@media (max-width: 999px) {
-  /* Comfortable ≥44px tap targets for the horizontally-scrolling phone/
-     tablet nav row and its "Данни" button; the ≥1000px desktop nav below
-     keeps its original compact sizing untouched. */
-  .nav__links a {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    padding: 0 12px;
-  }
-  .nav__links a:first-child { margin-left: -12px; }
-  .nav__data.btn--sm { min-height: 44px; padding: 0 16px; }
+.nav__menu { flex: none; }
+.nav__menu > summary { min-height: 44px; padding: 0 16px; list-style: none; }
+.nav__menu > summary::-webkit-details-marker { display: none; }
+.nav__menu[open] > summary { background: var(--accent-text); border-color: var(--accent-text); color: var(--on-accent); }
+/* Drops down over the page from the sticky bar (its containing block). */
+.nav__menu > nav {
+  position: absolute;
+  inset: 100% 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-1);
+  padding: var(--s-3) var(--gutter) var(--s-4);
+  border-bottom: 1px solid var(--border-2);
+  background: var(--bg);
+  box-shadow: 0 12px 24px rgba(45, 61, 113, 0.12);
 }
+.nav__menu > nav a {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 var(--s-3);
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.nav__menu > nav a:hover, .nav__menu > nav a[aria-current="page"] { background: var(--surface-2); }
 
-@media (min-width: 1000px) {
-  .nav__inner {
-    grid-template-columns: auto 1fr auto;
-    grid-template-areas: "brand links data";
-    height: var(--nav-h);
-  }
+@media (min-width: 1160px) {
+  .nav__inner { height: var(--nav-h); }
   .wordmark { height: var(--nav-h); }
-  .nav__links {
-    justify-content: center;
-    margin: 0;
-    padding: 0;
-    overflow: visible;
-  }
-  .nav__links a:first-child { margin-left: 0; }
+  .nav__menu { display: none; }
+  .nav__links { display: flex; flex: 1 1 auto; justify-content: center; gap: var(--s-1); }
+  .nav__data { display: inline-flex; }
 }
 
 /* ------------------------------------------------------------------ hero (home) */
 .hero {
   position: relative;
   isolation: isolate;
-  padding: var(--s-8) 0 var(--s-8);
+  padding: var(--s-7) 0 var(--s-6);
   overflow: hidden;
 }
 .hero::before {
@@ -406,33 +473,13 @@ code {
   pointer-events: none;
 }
 @media (min-width: 768px) {
-  .hero { padding: var(--s-10) 0 var(--s-9); }
+  .hero { padding: var(--s-8) 0 var(--s-7); }
 }
-
-.hero__badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-  height: 28px;
-  padding: 0 10px 0 12px;
-  margin-bottom: var(--s-5);
-  border: 1px solid var(--border-2);
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-2);
-  background: var(--surface-1);
-  transition: border-color 0.15s ease, color 0.15s ease;
-}
-.hero__badge:hover { color: var(--text); border-color: var(--text-3); }
-.hero__badge-sep { width: 1px; height: 12px; background: var(--border-2); }
-.hero__badge-link { display: inline-flex; align-items: center; gap: 2px; color: var(--text); }
 
 .hero__title {
   max-width: 820px;
   font-size: clamp(34px, 3vw + 13px, 56px);
   line-height: 1.06;
-  letter-spacing: -0.032em;
   font-weight: 600;
   text-wrap: balance;
 }
@@ -445,19 +492,8 @@ code {
   font-size: 17px;
   line-height: 1.55;
   color: var(--text-2);
-  letter-spacing: -0.005em;
 }
 @media (min-width: 768px) { .hero__sub { font-size: 18px; } }
-
-.hero__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-3);
-  margin-top: var(--s-6);
-}
-
-.hero .stats { margin-top: var(--s-8); }
-@media (min-width: 768px) { .hero .stats { margin-top: var(--s-9); } }
 
 /* ------------------------------------------------------------------ stat strip */
 .stats {
@@ -500,7 +536,6 @@ a.stat:hover { background: var(--surface-2); }
 .figure {
   font-size: clamp(30px, 1.2vw + 20px, 38px);
   font-weight: 600;
-  letter-spacing: -0.035em;
   color: var(--text);
   white-space: nowrap;
 }
@@ -509,7 +544,6 @@ a.stat:hover { background: var(--surface-2); }
   margin-left: 0.18em;
   font-size: 0.55em;
   font-weight: 500;
-  letter-spacing: -0.01em;
   color: var(--text-2);
 }
 
@@ -638,7 +672,6 @@ a.stat:hover { background: var(--surface-2); }
 .section-head__title {
   font-size: clamp(26px, 1.4vw + 16px, 36px);
   line-height: 1.12;
-  letter-spacing: -0.028em;
 }
 .section-head__text {
   max-width: 480px;
@@ -660,7 +693,6 @@ a.stat:hover { background: var(--surface-2); }
   max-width: 900px;
   font-size: clamp(24px, 1.5vw + 14px, 36px);
   line-height: 1.2;
-  letter-spacing: -0.026em;
   font-weight: 600;
   text-wrap: pretty;
 }
@@ -672,7 +704,7 @@ a.stat:hover { background: var(--surface-2); }
   margin-top: var(--s-7);
 }
 .how__item { display: flex; flex-direction: column; gap: var(--s-2); }
-.how__item h3 { font-size: 15px; letter-spacing: -0.01em; }
+.how__item h3 { font-size: 15px; }
 .how__item p:not(.how__index) { font-size: 14px; line-height: 1.6; color: var(--text-2); max-width: 340px; }
 .how__item .link-arrow { margin-top: var(--s-2); }
 .how__index {
@@ -704,7 +736,7 @@ a.stat:hover { background: var(--surface-2); }
   gap: var(--s-2) var(--s-4);
   margin-bottom: var(--s-4);
 }
-.card__title { font-size: 14px; font-weight: 500; letter-spacing: -0.01em; }
+.card__title { font-size: 14px; font-weight: 500; }
 .card__meta { font-size: 13px; color: var(--text-2); }
 
 /* ------------------------------------------------------------------ charts */
@@ -720,7 +752,6 @@ a.stat:hover { background: var(--surface-2); }
   fill: var(--text);
   font-size: 12px;
   font-weight: 500;
-  letter-spacing: -0.01em;
 }
 .chart__cat { fill: var(--text-2); font-size: 12px; }
 .chart__col--accent .chart__cat { fill: var(--text); font-weight: 500; }
@@ -817,7 +848,7 @@ a.issue:hover .issue__chev { color: var(--text); }
 .flagrow__summary::marker { display: none; }
 .flagrow .issue__chev { display: flex; } /* always show the toggle hint, including on phones */
 .flagrow[open] > .flagrow__summary .chevron { transform: rotate(90deg); }
-.flagrow:target > .flagrow__summary { background: rgba(94, 106, 210, 0.12); }
+.flagrow:target > .flagrow__summary { background: rgba(66, 150, 255, 0.12); }
 
 .flagrow__panel {
   display: grid;
@@ -999,7 +1030,6 @@ a.issue:hover .issue__chev { color: var(--text); }
   gap: 8px;
   margin-bottom: var(--s-3);
   font-size: 15px;
-  letter-spacing: -0.01em;
 }
 .monitor-block ul { margin: 0; padding-left: 1.1em; }
 .monitor-block li { font-size: 13.5px; line-height: 1.6; color: var(--text-body); }
@@ -1075,7 +1105,6 @@ a.issue:hover .issue__chev { color: var(--text); }
   max-width: 900px;
   font-size: clamp(30px, 1.8vw + 18px, 44px);
   line-height: 1.1;
-  letter-spacing: -0.03em;
   text-wrap: balance;
 }
 .page-head__sub {
@@ -1097,7 +1126,7 @@ a.issue:hover .issue__chev { color: var(--text); }
 }
 
 /* contract detail titles can be several lines long */
-.page-head__back + .page-head__title { font-size: clamp(24px, 1.2vw + 16px, 34px); line-height: 1.2; letter-spacing: -0.024em; }
+.page-head__back + .page-head__title { font-size: clamp(24px, 1.2vw + 16px, 34px); line-height: 1.2; }
 
 .meta-row {
   display: flex;
@@ -1113,7 +1142,6 @@ a.issue:hover .issue__chev { color: var(--text); }
 .block__title {
   font-size: 20px;
   line-height: 1.3;
-  letter-spacing: -0.02em;
   margin-bottom: var(--s-2);
 }
 .block__head .block__title { margin-bottom: 0; }
@@ -1192,7 +1220,7 @@ a.issue:hover .issue__chev { color: var(--text); }
 }
 .facts dt { font-size: 13px; color: var(--text-2); }
 .facts dd { margin: 0; font-size: 15px; color: var(--text); overflow-wrap: anywhere; }
-.facts__big { font-size: 22px !important; font-weight: 600; letter-spacing: -0.02em; }
+.facts__big { font-size: 22px !important; font-weight: 600; }
 @media (min-width: 768px) {
   .facts__row { grid-template-columns: 260px minmax(0, 1fr); gap: var(--s-6); align-items: baseline; padding: var(--s-4) 0; }
   .facts dt { font-size: 14px; }
@@ -1335,7 +1363,7 @@ a.issue:hover .issue__chev { color: var(--text); }
 .table th:last-child, .table td:last-child { padding-right: 4px; }
 .table tbody tr { transition: background-color 0.1s ease; }
 .table tbody tr:hover td { background: var(--surface-1); }
-.table tbody tr:target td { background: rgba(94, 106, 210, 0.1); }
+.table tbody tr:target td { background: rgba(66, 150, 255, 0.1); }
 
 .table .num { text-align: right; white-space: nowrap; }
 .table td.num { color: var(--text); }
@@ -1355,6 +1383,7 @@ a.issue:hover .issue__chev { color: var(--text); }
   font-size: 10px;
   color: var(--accent-text);
 }
+.table th[data-sort="none"]::after { content: "↕"; color: var(--text-3); }
 .table th[data-sort="asc"]::after { content: "↑"; }
 .table th[data-sort="desc"]::after { content: "↓"; }
 .table th.num[data-sort]::after { margin-left: 2px; }
@@ -1510,7 +1539,7 @@ a.issue:hover .issue__chev { color: var(--text); }
   .table--settlement-objects td:nth-child(5) { grid-area: cad; text-align: left; }
 }
 
-@media (min-width: 1000px) {
+@media (min-width: 1160px) {
   /* Wide enough for every table to fit: let the header stick to the nav. */
   .table-wrap { overflow: visible; }
   .table thead th { position: sticky; top: var(--nav-h); z-index: 2; }
@@ -1527,7 +1556,6 @@ a.issue:hover .issue__chev { color: var(--text); }
   border-bottom: 1px solid var(--border-2);
   font-size: 14px;
   font-weight: 500;
-  letter-spacing: -0.01em;
 }
 .rows { list-style: none; padding: 0; }
 .rows li {
@@ -1574,7 +1602,7 @@ a.issue:hover .issue__chev { color: var(--text); }
 .file:hover .file__icon { color: var(--text); }
 
 /* ------------------------------------------------------------------ methodology doc */
-.doc { display: grid; gap: var(--s-6); }
+.doc { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-6); overflow-wrap: anywhere; }
 .doc__toc { display: none; }
 @media (min-width: 1000px) {
   .doc { grid-template-columns: 200px minmax(0, 760px); gap: var(--s-8); align-items: start; }
@@ -1592,23 +1620,45 @@ a.issue:hover .issue__chev { color: var(--text); }
 
 .prose { color: var(--text-body); font-size: 15px; line-height: 1.7; }
 .prose section + section { margin-top: var(--s-8); }
-.prose h2 { margin-bottom: var(--s-4); font-size: 22px; line-height: 1.25; letter-spacing: -0.022em; }
+.prose h2 { margin-bottom: var(--s-4); font-size: 22px; line-height: 1.25; }
 .prose p + p, .prose p + ul, .prose ul + p, .prose dl + p, .prose p + dl { margin-top: var(--s-4); }
 .prose ul { padding-left: 1.1em; }
 .prose li + li { margin-top: var(--s-2); }
 .prose li::marker { color: var(--text-3); }
 
 /* ------------------------------------------------------------------ footer */
+/* OSN's footer shape: navy block with the line-art logo, a diagonal cut,
+   then our own links; a full-width navy bar closes the page. */
 .footer {
   margin-top: var(--section-gap);
   border-top: 1px solid var(--border);
-  padding: var(--s-8) 0 var(--s-6);
 }
-.footer__grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-6); }
+.footer__main { display: flex; flex-direction: column; }
+.footer__logo { display: flex; align-items: center; justify-content: center; padding: var(--s-5); background: var(--navy); }
+.footer__logo img { width: 140px; height: auto; }
+.footer__grid {
+  display: grid;
+  flex: 1 1 0;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-6);
+  min-width: 0;
+  padding: var(--s-7) var(--gutter);
+}
 .footer__brand { grid-column: 1 / -1; }
-@media (min-width: 768px) {
+/* 1000px, not 768: the logo block and cut take 370px, and three link
+   columns do not fit beside them on a tablet. */
+@media (min-width: 1000px) {
+  .footer__main { flex-direction: row; }
+  .footer__logo { flex: 0 0 250px; padding: 0; }
+  .footer__logo img { width: 200px; }
+  .footer .osn__cut {
+    display: block;
+    width: 120px;
+    margin-left: -1px;
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
   .footer__brand { grid-column: auto; }
-  .footer__grid { grid-template-columns: 2fr 1fr 1fr; gap: var(--s-7); }
+  .footer__grid { grid-template-columns: 2fr 1fr 1fr; gap: var(--s-7); padding: var(--s-8) var(--gutter) var(--s-8) var(--s-4); }
 }
 .footer .wordmark { height: auto; }
 .footer__note {
@@ -1622,18 +1672,13 @@ a.issue:hover .issue__chev { color: var(--text); }
 .footer__col li + li { margin-top: var(--s-2); }
 .footer__col a { font-size: 13px; color: var(--text-2); transition: color 0.15s ease; }
 .footer__col a:hover { color: var(--text); }
-.footer__meta {
+.footer__meta { padding: var(--s-4) 0; background: var(--navy); font-size: 12px; color: #fff; }
+.footer__meta .container {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   gap: var(--s-2) var(--s-5);
-  margin-top: var(--s-8);
-  padding-top: var(--s-5);
-  border-top: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--text-3);
 }
-.footer__meta time { color: var(--text-2); }
 
 /* home page: the last section sits right above the footer */
 .section:last-child { padding-bottom: 0; }
@@ -1643,7 +1688,7 @@ a.issue:hover .issue__chev { color: var(--text); }
 }
 
 @media print {
-  .nav, .footer, .toolbar, .hero::before { display: none; }
+  .osn, .nav, .footer, .toolbar, .hero::before { display: none; }
   body { background: #fff; color: #000; }
 }
 
@@ -1652,9 +1697,9 @@ a.issue:hover .issue__chev { color: var(--text); }
   display: inline-block;
   margin-left: 8px;
   padding: 1px 7px;
-  border: 1px solid var(--accent, #5e6ad2);
+  border: 1px solid var(--gold);
   border-radius: 999px;
-  color: var(--accent, #5e6ad2);
+  color: var(--navy);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -1665,6 +1710,8 @@ a.issue:hover .issue__chev { color: var(--text); }
 @media (max-width: 640px) {
   .wordmark__muted { display: none; }
   .beta-pill { margin-left: 6px; }
+  /* Lora is wider: wordmark + pill + "Данни" only just fit a 360px phone. */
+  .nav__inner { column-gap: var(--s-2); }
 }
 
 /* ------------------------------------------------------------------ map page */
@@ -1677,6 +1724,7 @@ a.issue:hover .issue__chev { color: var(--text); }
   margin-bottom: var(--s-4);
 }
 .map__years { flex: 1 1 auto; max-width: 100%; }
+.map__toolbar .search { flex-basis: 320px; }
 
 .map__frame {
   height: 60vh;
@@ -1714,7 +1762,7 @@ a.issue:hover .issue__chev { color: var(--text); }
 }
 .leaflet-control-zoom a:hover { background: var(--surface-hover) !important; }
 .leaflet-control-attribution {
-  background: rgba(15, 16, 17, 0.72) !important;
+  background: rgba(255, 255, 255, 0.8) !important;
   color: var(--text-2) !important;
 }
 .leaflet-control-attribution a { color: var(--text-body) !important; }
@@ -1768,20 +1816,18 @@ a.issue:hover .issue__chev { color: var(--text); }
   background: var(--text-2);
   transition: transform 0.15s ease, background-color 0.15s ease;
 }
-.switch input:checked + .switch__track { background: var(--accent); border-color: var(--accent); }
+.switch input:checked + .switch__track { background: var(--accent-text); border-color: var(--accent-text); }
 .switch input:checked + .switch__track .switch__thumb { transform: translateX(16px); background: #fff; }
 .switch input:focus-visible + .switch__track { box-shadow: 0 0 0 3px var(--focus-ring); }
 
 @media (max-width: 719px) {
   .map__toolbar { flex-direction: column; align-items: stretch; }
+  .map__toolbar .search { flex: none; max-width: none; }
   .switch { min-height: 44px; }
 }
 
 /* ------------------------------------------------------------------ Trade Register card (companies) */
-:root { --status-active: #3fb950; }
-@media (prefers-color-scheme: light) {
-  :root { --status-active: #2f9e44; }
-}
+:root { --status-active: #2f9e44; }
 .dot--active { background: var(--status-active); }
 .col-tr { width: 1%; text-align: center; }
 /* `.is-over` was table-cell-only (`.table td.is-over`); the stale-ГФО note
@@ -1851,3 +1897,194 @@ a.issue:hover .issue__chev { color: var(--text); }
   margin-top: 4px;
 }
 .loc-line .code-chip { font-size: 12px; }
+
+/* ------------------------------------------------------------------ help box
+   "Какво означават думите на тази страница": the page's glossary entries,
+   closed by default (see the help_box macro). */
+.help {
+  max-width: 760px;
+  margin-bottom: var(--s-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+}
+.help__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 var(--s-4);
+  cursor: pointer;
+  list-style: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.help__summary::-webkit-details-marker { display: none; }
+.help__summary .chevron { flex: none; transition: transform 0.15s ease; }
+.help[open] > .help__summary .chevron { transform: rotate(90deg); }
+.help__list {
+  display: grid;
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0 var(--s-4) var(--s-4);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.help__list dt { font-weight: 700; color: var(--text); }
+.help__list dd { margin: 0; color: var(--text-body); }
+
+/* ------------------------------------------------------------------ site search (home)
+   One box for the whole site: places, companies, contracts. */
+.sitesearch { max-width: 640px; margin-top: var(--s-6); }
+.sitesearch__label { display: block; margin-bottom: var(--s-2); font-size: 14px; font-weight: 700; color: var(--text); }
+.sitesearch .search { max-width: none; }
+.sitesearch .input { height: 52px; padding-left: 40px; border: 2px solid var(--navy); background: var(--bg); font-size: 16px; }
+.sitesearch .search__icon { left: 15px; }
+.sitesearch__hint { margin-top: var(--s-2); font-size: 13px; color: var(--text-2); }
+.sitesearch__results:empty { display: none; }
+.sitesearch__results {
+  margin-top: var(--s-3);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.sitesearch__count { padding: var(--s-3) var(--s-4); font-size: 13px; color: var(--text-2); }
+.sitesearch__results ul { margin: 0; padding: 0; list-style: none; }
+.sitesearch__results li { border-top: 1px solid var(--border); }
+.sitesearch__results a {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px var(--s-3);
+  align-items: baseline;
+  min-height: 48px;
+  padding: var(--s-3) var(--s-4);
+  font-size: 15px;
+  color: var(--text);
+}
+.sitesearch__results a:hover { background: var(--surface-2); }
+.sitesearch__kind {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+@media (min-width: 720px) {
+  .sitesearch__results a { grid-template-columns: 130px minmax(0, 1fr); }
+  .sitesearch__results .sub { grid-column: 2; }
+}
+
+/* ------------------------------------------------------------------ question cards (home)
+   "Какво искате да разберете?": one card per section, each a whole link. */
+.qcards { display: grid; gap: var(--s-4); margin: var(--s-6) 0 0; padding: 0; list-style: none; }
+@media (min-width: 720px) { .qcards { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1080px) { .qcards { grid-template-columns: repeat(3, 1fr); } }
+.qcards > li { display: flex; }
+.qcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-5);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.qcard:hover { border-color: var(--accent); background: var(--surface-2); }
+.qcard__q { font-size: 20px; line-height: 1.25; }
+.qcard__a { flex: 1 1 auto; font-size: 15px; line-height: 1.55; color: var(--text-body); }
+.qcard .link-arrow { color: var(--accent-text); font-weight: 700; }
+.qcard:hover .chevron { transform: translateX(2px); color: currentColor; }
+
+/* ------------------------------------------------------------------ rows that open a page
+   The link's hit area covers the whole table row, so a click anywhere on
+   the row follows it; the chevron says so before the click. */
+.table tr:has(> td > .row-link--stretch) { position: relative; cursor: pointer; }
+.row-link--stretch { display: inline-flex; align-items: center; gap: var(--s-1); }
+.row-link--stretch::after { content: ""; position: absolute; inset: 0; }
+.row-link--stretch .chevron { color: var(--text-3); transition: transform 0.15s ease, color 0.15s ease; }
+tr:hover .row-link--stretch { color: var(--accent-text); }
+tr:hover .row-link--stretch .chevron { transform: translateX(2px); color: currentColor; }
+
+/* ------------------------------------------------------------------ grouped tables
+   A group heading with its total (spending by function), and an indented
+   sub-row under a table row (the sub-types of a spending type). */
+.group-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin-top: var(--s-6);
+  padding: 0 4px var(--s-2);
+  border-bottom: 2px solid var(--navy);
+  font-size: 16px;
+  line-height: 1.3;
+}
+.group-title > :last-child { flex: none; font-variant-numeric: tabular-nums; }
+.table tr.subrow td { padding-top: 4px; padding-bottom: 4px; border-bottom-color: transparent; font-size: 13px; color: var(--text-2); }
+.table tr.subrow td:nth-child(2) { padding-left: var(--s-5); }
+.sub a { text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 2px; }
+.sub a:hover { color: var(--accent-text); }
+/* inside a clickable row, links in the small print must stay clickable */
+.row-link--stretch ~ .sub a { position: relative; }
+
+/* Bar tables (spending by activity / by type). Wide screens: one width for
+   the amount column, so the bars of the stacked group tables line up.
+   Phones: name and amount on one line with the bar under them, instead of a
+   labelled line for each. */
+@media (min-width: 720px) {
+  .table--bars td.num, .table--bars th.num { width: 9.5em; }
+}
+@media (max-width: 719px) {
+  .table--bars tr {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "code name amount" "meter meter meter";
+    column-gap: var(--s-3);
+  }
+  .table--bars td:nth-child(4) { grid-area: amount; text-align: right; }
+  .table--bars .cell-label { display: none; }
+  .table--stack a.row-link--stretch { display: flex; }
+  .table--stack tr.subrow { padding-block: 6px; border-bottom-color: transparent; }
+  .row-link--stretch .chevron { flex: none; }
+}
+
+/* ------------------------------------------------------------------ section layers
+   Breadcrumbs (where a page sits), the links between a section's views, and
+   the one-sentence summary under a page's headline numbers. */
+.crumbs ol { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 0 0 var(--s-4); padding: 0; list-style: none; font-size: 13px; color: var(--text-2); }
+.crumbs li + li::before { content: "›"; margin-right: 8px; color: var(--text-3); }
+.crumbs a { color: var(--accent-text); text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
+.crumbs a:hover { text-decoration-color: currentColor; }
+.subnav { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-bottom: var(--s-5); }
+.subnav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.subnav a:hover { border-color: var(--accent); background: var(--surface-2); }
+.subnav a[aria-current="page"] { border-color: var(--navy); background: var(--navy); color: var(--on-accent); }
+@media (max-width: 719px) { .subnav a { min-height: 44px; } }
+.lead { max-width: 760px; margin-top: var(--s-5); font-size: 17px; line-height: 1.55; color: var(--text-body); }
+.lead a { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+.group-title[id] { scroll-margin-top: calc(var(--nav-h) + var(--s-5)); }
+
+.help__body { padding: 0 var(--s-4) var(--s-4); }
+.block > .group-title + .block__sub { margin-top: var(--s-3); margin-bottom: var(--s-4); }
+.block > .table-wrap + .help { margin-top: var(--s-4); max-width: none; }
+
+/* ==== shared usability styles go ABOVE this line; page-level additions go BELOW ==== */
+
+/* grouped month selector (budget pages): one wrapping row per year */
+.months { display: grid; gap: var(--s-2); padding: 0 var(--s-4) var(--s-4); }
+.months__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.months__year { flex: none; width: 3.2em; font-size: 13px; font-weight: 700; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.segmented--wrap { flex-wrap: wrap; width: auto; margin-bottom: 0; overflow: visible; border-radius: 16px; }

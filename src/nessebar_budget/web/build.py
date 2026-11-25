@@ -15,6 +15,7 @@ Also exposes `build_site(out_dir, db_url=None)` for programmatic/test use.
 from __future__ import annotations
 
 import argparse
+import calendar
 import csv
 import datetime as dt
 import hashlib
@@ -32,12 +33,20 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy import create_engine, func, select
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from nessebar_budget.analysis.rules._common import _local_date
 from nessebar_budget.config import get_settings
-from nessebar_budget.db.budget_models import BudgetLineItem, CashExecutionLine
+from nessebar_budget.db.budget_models import (
+    BudgetLineItem,
+    CashActivityLine,
+    CashExecutionLine,
+    FundLine,
+)
 from nessebar_budget.db.models import CadastreParcel, Company, CompanyPerson, Flag, Procurement
+from nessebar_budget.db.staff_models import NaturalIndicator
+from nessebar_budget.parsers.budget_b1 import ACTIVITY_TOTAL
 from nessebar_budget.scrapers.cadastre import index_path as cadastre_index_path
 from nessebar_budget.scrapers.registry import normalize_eiks
 from nessebar_budget.web import geo
@@ -153,6 +162,87 @@ TIER_TOOLTIPS = {
     "violation": "Пряко несъответствие със закона, видимо от данните",
     "signal": "Модел, съвместим с нередност; нужни са документи",
     "opacity": "Законно, но непроверимо без допълнителни документи",
+}
+
+#: Plain-language glossary: the one place every specialist word on the site
+#: is explained. Pages show the entries they use in a "какво означават
+#: думите" box (`help_box` macro); the methodology page lists them all.
+#: Definitions describe what a thing is, never whether anyone did wrong.
+GLOSSARY: dict[str, tuple[str, str]] = {
+    "poruchka": ("Обществена поръчка", "Когато общината купува нещо или възлага работа с публични пари (строеж, ремонт, доставка, услуга), тя е длъжна да го обяви и да избере изпълнител по правилата на закона."),
+    "procedura": ("Процедура", "Начинът, по който общината избира изпълнител. При „открита процедура“ и „публично състезание“ може да участва всяка фирма. „Събиране на оферти с обява“ е по-опростен ред за по-малки суми. При „договаряне“ общината кани една или няколко конкретни фирми."),
+    "oferti": ("Оферти", "Броят фирми, подали предложение за поръчката. Когато е подадена само една оферта, няма друга, с която да се сравни цената. Броят идва от платформата СИГМА."),
+    "ochakvana": ("Очаквана цена (прогнозна стойност)", "Сумата, която общината е обявила, че очаква да плати, преди да е избран изпълнител. Цената по договора може да е различна."),
+    "eop": ("ЦАИС ЕОП", "Държавната електронна платформа за обществени поръчки (app.eop.bg). В нея всички възложители публикуват поръчките и договорите си."),
+    "sigma": ("СИГМА", "Държавна платформа за прозрачност на обществените поръчки (sigma.midt.bg). От нея идва броят на подадените оферти."),
+    "eik": ("ЕИК", "Единен идентификационен код: номерът на фирмата в Търговския регистър. По него фирмата се разпознава еднозначно, дори да има съименници."),
+    "tr": ("Търговски регистър", "Публичният държавен регистър на фирмите. Показва дали фирмата е действаща, кой я управлява и кой я притежава."),
+    "gfo": ("ГФО", "Годишен финансов отчет: отчетът за приходите, разходите и имуществото на фирмата за една година. Фирмите го обявяват в Търговския регистър."),
+    "cpv": ("CPV код", "Европейски код за вида на поръчката, например строителство, храни или транспорт."),
+    "kapitalova": ("Капиталова програма", "Списъкът на строежите, основните ремонти и по-големите покупки (техника, сгради, земя), които общината планира за годината. Това е само част от целия бюджет."),
+    "plan": ("План", "Сумата, предвидена за годината. Тя може да се променя през годината; показана е стойността от последния месечен отчет."),
+    "izpalnenie": ("Изпълнение", "Каква част от плана вече е платена. 50% означава, че е платена половината от предвидената сума."),
+    "deynost": ("Дейност", "Това, за което се харчат парите: например детски градини, чистота, улично осветление или общинска администрация. Общината отчита разходите си по около 50 дейности, подредени в девет функции."),
+    "darzhavni": ("Държавни и местни дейности", "Част от работата на общината е възложена от държавата и се плаща с държавни пари: училища, детски градини, социални услуги. Това са държавните дейности. Местните дейности общината плаща със собствените си приходи: чистота, улици, осветление. Дофинансиране има, когато общината добавя свои пари към държавна дейност."),
+    "transfer": ("Трансфер", "Пари, преведени от един бюджет на друг, без да са плащане за стока или услуга. Най-големият за общината е общата субсидия от държавата."),
+    "saldo": ("Бюджетно салдо", "Разликата между всичко постъпило и всичко платено. Когато е отрицателна (дефицит), тя се покрива със заеми или с пари, останали от предходни години."),
+    "nalichnosti": ("Наличности", "Парите по банковите сметки и срочните депозити на общината в даден момент."),
+    "funkcia": ("Функция", "Област, за която се харчат парите: образование, здравеопазване, благоустройство, култура и други."),
+    "obekt": ("Обект", "Един ред от капиталовата програма: конкретен строеж, ремонт или покупка."),
+    "kasovo": ("Касово изпълнение", "Парите, които общината реално е платила до момента. Планът показва какво е предвидено, а касовото изпълнение какво вече е платено."),
+    "paragraf": ("Параграф (§)", "Вид разход по държавната бюджетна класификация, например заплати, издръжка или строежи. Всеки вид има номер."),
+    "izdrazhka": ("Издръжка", "Текущите разходи за работата на общината и нейните звена: ток, вода, горива, материали, външни услуги, текущи ремонти."),
+    "ostatak": ("Преходен остатък", "Пари, останали неизхарчени от предходната година, които се прехвърлят в бюджета за тази година."),
+    "signal": ("Сигнал", "Автоматично открито несъответствие в публичните данни. То е повод за въпрос и за искане на документи, а не доказателство за нарушение."),
+    "tezhest": ("Тежест", "Колко наложително е да се зададе въпрос: ниска („добре е да се знае“), средна („заслужава въпрос“) или висока („заслужава въпрос скоро“). Не е оценка за вина."),
+    "zop": ("ЗОП", "Закон за обществените поръчки: правилата, по които общината избира изпълнители."),
+    "zdoi": ("ЗДОИ", "Закон за достъп до обществена информация: дава право на всеки да поиска документи от общината, без да обяснява защо."),
+    "ekatte": ("ЕКАТТЕ", "Държавният код на населеното място. Използва се, за да няма объркване между места с еднакви имена."),
+    "kadastar": ("Кадастрален идентификатор", "Номерът на конкретен имот в кадастралната карта. По него имотът може да се намери на картата."),
+}
+
+#: The nine functions of the unified budget classification; an activity's
+#: 4-digit code starts with its function's digit ("3311" = function 3,
+#: activity 311 "Детски градини").
+FUNCTION_NAMES = {
+    "1": "Общи държавни служби",
+    "2": "Отбрана и сигурност",
+    "3": "Образование",
+    "4": "Здравеопазване",
+    "5": "Социално осигуряване, подпомагане и грижи",
+    "6": "Жилищно строителство, благоустройство, комунално стопанство и опазване на околната среда",
+    "7": "Култура, спорт, почивни дейности и религиозно дело",
+    "8": "Икономически дейности и услуги",
+    "9": "Разходи, некласифицирани в другите функции",
+}
+
+#: Spending categories that are pay: the report never names who was paid, and
+#: for these the names are personal data, so the page explains what can be
+#: asked for instead (headcount and average pay per unit).
+PERSONNEL_PARAGRAPHS = {"100", "200", "500", "800"}
+
+
+def _paragraph_code(paragraph: str) -> str:
+    """'1030' -> '10-30', '100' -> '01-00': the way a § is written in the
+    budget classification and in a request to the municipality."""
+    padded = str(paragraph).zfill(4)
+    return f"{padded[:2]}-{padded[2:]}"
+
+
+#: Plain names for the spending categories (§ paragraphs of the unified
+#: budget classification) that carry almost all of the money. Shown next to
+#: the official name, never instead of it.
+PARAGRAPH_PLAIN = {
+    "100": "Заплати на служителите",
+    "200": "Хонорари, обезщетения и други плащания за персонала",
+    "500": "Осигуровки на служителите",
+    "1000": "Ток, вода, горива, материали, външни услуги, текущи ремонти",
+    "1900": "Данъци, такси и глоби, платени от общината",
+    "4000": "Стипендии за ученици",
+    "4200": "Помощи и обезщетения за домакинствата",
+    "4500": "Субсидии за читалища, клубове и други организации с нестопанска цел",
+    "5100": "Основни ремонти",
+    "5200": "Строежи и покупка на сгради, техника и съоръжения",
 }
 
 #: Best-effort tier for a flag whose `tier` column is missing/NULL (older DB
@@ -307,7 +397,7 @@ class ContractView:
 
     @property
     def value_label(self) -> str:
-        return "стойност по договор" if self.contract_value_eur is not None else "прогнозна стойност"
+        return "стойност по договор" if self.contract_value_eur is not None else "очаквана цена (прогнозна стойност)"
 
 
 def _slugify(value: str) -> str:
@@ -1055,21 +1145,366 @@ def _load_cash(session: Session) -> dict[str, Any]:
         income_total = next(
             (r for r in income if extra_row_type(r) == "section_total"), None
         )
-        expense_paragraphs = sorted(
-            (
-                {"paragraph": r.paragraph, "name": r.name, "actual_ytd": _as_float(r.actual_ytd)}
-                for r in expense
-                if extra_row_type(r) == "paragraph"
-            ),
-            key=lambda d: -(d["actual_ytd"] or 0),
-        )
+        def line(r: CashExecutionLine) -> dict[str, Any]:
+            extra = r.extra_json or {}
+            return {
+                "paragraph": r.paragraph, "name": r.name,
+                "actual_ytd": _as_float(r.actual_ytd),
+                "plan": _as_float(r.plan_adjusted),
+                "source_row": extra.get("source_row"),
+                # Who funds it: state-delegated / local / local co-financing.
+                "state": extra.get("actual_state"),
+                "local": extra.get("actual_local"),
+                "cofinance": extra.get("actual_cofinance"),
+                "on_deposit": extra.get("on_deposit"),  # cash-balance rows only
+            }
+
+        def grouped(section_rows: list[CashExecutionLine]) -> list[dict[str, Any]]:
+            """A section's categories (§§), biggest first, each with its
+            sub-categories (под-§§) under it."""
+            children: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            for r in section_rows:
+                if extra_row_type(r) == "subparagraph":
+                    children[(r.extra_json or {}).get("parent_paragraph", "")].append(line(r))
+            return sorted(
+                (
+                    {
+                        **line(r),
+                        "children": sorted(
+                            children.get(r.paragraph, []), key=lambda d: -(d["actual_ytd"] or 0)
+                        ),
+                    }
+                    for r in section_rows
+                    if extra_row_type(r) == "paragraph"
+                ),
+                key=lambda d: -(d["actual_ytd"] or 0),
+            )
+
+        expense_paragraphs = grouped(expense)
+
+        def table(section: str, prows: list[CashExecutionLine] = prows) -> list[CashExecutionLine]:
+            return [r for r in prows if r.section == section]
+
+        def table_total(section: str) -> float | None:
+            row = next((r for r in table(section) if extra_row_type(r) == "section_total"), None)
+            return _as_float(row.actual_ytd) if row else None
         period_data[period] = {
             "period": period,
             "expense_total": _as_float(expense_total.actual_ytd) if expense_total else None,
             "income_total": _as_float(income_total.actual_ytd) if income_total else None,
             "expense_paragraphs": expense_paragraphs,
+            "income_paragraphs": grouped(income),
+            "expense_split": line(expense_total) if expense_total else None,
+            # The tables that close the books: money from and to other
+            # budgets, temporary loans, and what financed the difference.
+            "transfers": grouped(table("трансфери")),
+            "transfers_total": table_total("трансфери"),
+            "temp_loans": grouped(table("временни заеми")),
+            "temp_loans_total": table_total("временни заеми"),
+            "financing": grouped(table("финансиране")),
+            "financing_total": table_total("финансиране"),
+            "balances": [line(r) for r in sorted(table("наличности"), key=lambda r: int(r.paragraph))],
         }
     return {"periods": periods, "by_period": period_data}
+
+
+def _load_cash_activities(session: Session) -> dict[str, dict[str, dict[str, Any]]]:
+    """Spending by activity (дейност), per period: `{period: {code: activity}}`
+    where an activity has its `name`, `plan` and `actual` (from its total
+    row) and `rows`, the §§/под-§§ that carry money in it. Empty when the
+    database pre-dates the `cash_activity_lines` table."""
+    try:
+        rows = session.execute(
+            select(
+                CashActivityLine.period, CashActivityLine.activity_code,
+                CashActivityLine.activity_name, CashActivityLine.paragraph,
+                CashActivityLine.parent_paragraph, CashActivityLine.plan,
+                CashActivityLine.actual, CashActivityLine.source_row,
+                CashActivityLine.actual_state, CashActivityLine.actual_local,
+                CashActivityLine.actual_cofinance,
+            )
+        ).all()
+    except OperationalError:
+        return {}
+    by_period: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    for period, code, name, paragraph, parent, plan, actual, source_row, state, local, cofin in rows:
+        activity = by_period[period].setdefault(
+            code,
+            {"code": code, "name": None, "plan": None, "actual": None, "source_row": None, "rows": []},
+        )
+        if paragraph == ACTIVITY_TOTAL:
+            activity.update(
+                name=name, plan=_as_float(plan), actual=_as_float(actual), source_row=source_row,
+                state=_as_float(state), local=_as_float(local), cofinance=_as_float(cofin),
+            )
+        else:
+            activity["rows"].append(
+                {
+                    "paragraph": paragraph, "parent": parent,
+                    "plan": _as_float(plan), "actual": _as_float(actual),
+                }
+            )
+    return dict(by_period)
+
+
+def _export_cash_activities(
+    activities: dict[str, dict[str, dict[str, Any]]], data_dir: Path
+) -> None:
+    """`cash_activities.csv`: every money-carrying row of the per-activity
+    pages, all months -- one row per (period, activity, §§ or под-§§), plus
+    each activity's total."""
+    fieldnames = [
+        "period", "activity_code", "activity_name", "row_type",
+        "paragraph", "parent_paragraph", "plan", "actual",
+    ]
+    with (data_dir / "cash_activities.csv").open("w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(fieldnames)
+        for period in sorted(activities):
+            for code, a in sorted(activities[period].items()):
+                writer.writerow([period, code, a["name"], "total", "", "", a["plan"], a["actual"]])
+                for r in a["rows"]:
+                    writer.writerow(
+                        [
+                            period, code, a["name"],
+                            "subparagraph" if r["parent"] else "paragraph",
+                            r["paragraph"], r["parent"] or "", r["plan"], r["actual"],
+                        ]
+                    )
+
+
+#: The ledgers kept outside the budget for EU-funded projects (the suffix of
+#: the municipality's `IB1_*` report files), biggest programme family first:
+#: name, and what kind of programmes run through it.
+FUND_LEDGERS = {
+    "KSF": ("Кохезионен и структурни фондове на ЕС", "Оперативните програми, например „Околна среда“ и „Човешки ресурси“"),
+    "RA": ("Разплащателна агенция", "Програмата за развитие на селските райони и други земеделски фондове"),
+    "DES": ("Други европейски средства", "Програми извън оперативните, например за образователен обмен и трансгранично сътрудничество"),
+    "DMP": ("Други международни програми", "Проекти, платени от други международни програми и донори"),
+}
+
+#: Monthly minimum wage in EUR by year (leva converted at 1.95583 before
+#: 2026). An average below it cannot be the pay of full-time posts, so such
+#: a figure is not shown (see `_staff_view`).
+MIN_WAGE_EUR = {2019: 286, 2020: 312, 2021: 332, 2022: 363, 2023: 399, 2024: 477, 2025: 551, 2026: 620}
+#: Below this many posts an average would describe identifiable people.
+MIN_STAFF_FOR_AVERAGE = 5
+#: Head-count indicator of the natural-indicators form, and the §§ of pay.
+STAFF_INDICATOR = "100"
+SALARY_PARAGRAPH = "100"
+
+
+def _load_funds(session: Session) -> dict[str, Any]:
+    """The EU-project ledgers (and the third-party-funds one, K33) for the
+    site: for the latest period, each ledger's totals, its expenditure by
+    type (shaped like a cash table: categories with their sub-categories)
+    and by activity/programme, and K33's balances; plus every ledger's
+    expenditure at each year's end. Empty when the table does not exist."""
+    try:
+        rows = session.execute(
+            select(
+                FundLine.period, FundLine.ledger, FundLine.section, FundLine.paragraph,
+                FundLine.parent_paragraph, FundLine.name, FundLine.activity_code,
+                FundLine.programme_name, FundLine.plan, FundLine.actual, FundLine.row_type,
+            )
+        ).all()
+    except OperationalError:
+        return {}
+    if not rows:
+        return {}
+    latest = max(r.period for r in rows)
+    ledgers: dict[str, dict[str, Any]] = {}
+    years: dict[str, float] = defaultdict(float)
+    for r in rows:
+        actual = _as_float(r.actual) or 0.0
+        if (
+            r.section == "разходи" and r.row_type == "section_total"
+            and r.ledger in FUND_LEDGERS and r.period.endswith("-12")
+        ):
+            years[r.period[:4]] += actual
+        if r.period != latest:
+            continue
+        ledger = ledgers.setdefault(
+            r.ledger, {"totals": {}, "types": [], "subtypes": [], "activities": [], "balances": []}
+        )
+        line = {"paragraph": r.paragraph, "name": r.name, "actual_ytd": actual, "plan": _as_float(r.plan)}
+        if r.row_type == "section_total":
+            ledger["totals"][r.section] = actual
+        elif r.section == "разходи" and r.row_type == "paragraph":
+            ledger["types"].append({**line, "children": []})
+        elif r.section == "разходи" and r.row_type == "subparagraph":
+            ledger["subtypes"].append({**line, "parent": r.parent_paragraph})
+        elif r.row_type == "activity_total":
+            ledger["activities"].append(
+                {"code": r.activity_code, "name": r.name, "programme": r.programme_name, "actual": actual}
+            )
+        elif r.section == "наличности":
+            ledger["balances"].append(line)
+    for ledger in ledgers.values():
+        for parent in ledger["types"]:
+            parent["children"] = sorted(
+                (c for c in ledger["subtypes"] if c["parent"] == parent["paragraph"]),
+                key=lambda c: -c["actual_ytd"],
+            )
+        ledger["types"].sort(key=lambda t: -t["actual_ytd"])
+        ledger["activities"].sort(key=lambda a: -a["actual"])
+    return {
+        "period": latest,
+        "ledgers": ledgers,
+        "spent": sum(ledgers.get(k, {}).get("totals", {}).get("разходи", 0.0) for k in FUND_LEDGERS),
+        "years": [{"label": year, "value": value} for year, value in sorted(years.items())],
+    }
+
+
+def _load_staff(session: Session) -> dict[str, Any]:
+    """Head-counts and the other natural indicators per activity, by year:
+    `{"years": {year: {"basis", "total", "by_activity": {code: [indicators]}}}}`.
+    Empty when the table does not exist."""
+    try:
+        rows = session.execute(
+            select(
+                NaturalIndicator.year, NaturalIndicator.basis, NaturalIndicator.level,
+                NaturalIndicator.activity_code, NaturalIndicator.indicator_code,
+                NaturalIndicator.indicator_name, NaturalIndicator.total,
+            )
+        ).all()
+    except OperationalError:
+        return {}
+    years: dict[int, dict[str, Any]] = {}
+    for r in rows:
+        year = years.setdefault(r.year, {"basis": r.basis, "total": None, "by_activity": defaultdict(list)})
+        if r.level == "municipality" and r.indicator_code == STAFF_INDICATOR:
+            year["total"] = r.total
+        elif r.level == "activity" and r.activity_code and r.total:
+            year["by_activity"][r.activity_code].append(
+                {"code": r.indicator_code, "name": r.indicator_name.strip(" :"), "value": r.total}
+            )
+    for year in years.values():
+        for indicators in year["by_activity"].values():
+            indicators.sort(key=lambda i: int(i["code"]) if i["code"].isdigit() else 0)
+    return {"years": dict(sorted(years.items()))} if years else {}
+
+
+def _staff_view(
+    year: int, basis: str, indicators: list[dict[str, Any]], salaries: float | None
+) -> dict[str, Any]:
+    """What an activity's page says about its people for one year: the
+    head-count, the other indicators, and the average gross monthly pay per
+    post (that year's salaries / posts / 12) -- or why no average is shown.
+    The average is the site's arithmetic on two official figures, so it is
+    withheld where it would mislead (it comes out under the minimum wage,
+    which means the posts and the pay row do not describe the same people)
+    or would describe identifiable people (fewer than five posts)."""
+    staff = next((i["value"] for i in indicators if i["code"] == STAFF_INDICATOR), None)
+    view: dict[str, Any] = {
+        "year": year, "basis": basis, "staff": staff, "salaries": salaries,
+        "indicators": [i for i in indicators if i["code"] != STAFF_INDICATOR],
+        "average": None, "no_average": None,
+    }
+    if not staff or not salaries:
+        return view
+    average = salaries / staff / 12
+    if staff < MIN_STAFF_FOR_AVERAGE:
+        view["no_average"] = "При по-малко от пет щатни бройки средна заплата не се показва, за да не се разкриват доходите на конкретни хора."
+    elif average < 0.9 * MIN_WAGE_EUR.get(year, 0):
+        view["no_average"] = "Заплатите в отчета за тази дейност са по-малко, отколкото биха били за толкова щатни бройки, затова средна заплата не е изчислена. Вероятно част от хората се плащат по друг ред."
+    else:
+        view["average"] = average
+    return view
+
+
+#: §§ of the financing table that are loans and securities (their sub-rows
+#: are amounts received, positive, and repaid, negative), and the под-§§ of
+#: §95 that are the cash held at the period's start (positive) and end
+#: (negative).
+LOAN_PARAGRAPHS = {"8000", "8100", "8200", "8300", "8500"}
+CASH_START = {"9501", "9502", "9503", "9504", "9505", "9506"}
+CASH_END = {"9507", "9508", "9509", "9510", "9511", "9512"}
+
+#: Plain descriptions of the rows of the transfers and financing tables that
+#: are in use; shown under the official name, never instead of it.
+LATER_PLAIN = {
+    "3100": "Пари от държавния бюджет",
+    "3111": "Основната държавна субсидия за дейностите, възложени от държавата: училища, детски градини, социални услуги",
+    "3112": "Държавна субсидия за местни дейности",
+    "3113": "Държавни пари за строежи и основни ремонти",
+    "3118": "Държавни пари за конкретна цел",
+    "3128": "Държавни пари за конкретна цел, преведени през системата СЕБРА",
+    "3120": "Неизползвани държавни пари, върнати обратно",
+    "6100": "Пари от и към други бюджетни организации: министерства, агенции, други общини",
+    "6101": "Получени от други бюджетни организации",
+    "6102": "Преведени на други бюджетни организации",
+    "6200": "Пари между бюджета и сметките за европейски проекти",
+    "6201": "Получени от сметките за европейски проекти",
+    "6202": "Преведени към сметките за европейски проекти",
+    "7600": "Временен заем между бюджета и сметките за европейски проекти, докато дойдат парите от ЕС",
+    "8300": "Заеми от банки в страната: взети минус върнати",
+    "8311": "Краткосрочен банков заем, взет през периода",
+    "8312": "Дългосрочен банков заем, взет през периода",
+    "8321": "Върнат краткосрочен заем",
+    "8322": "Върната главница по дългосрочен заем",
+    "8800": "Пари, събрани или платени от името на други сметки",
+    "8803": "Пари, събрани или платени за сметките за европейски проекти",
+    "9500": "Промяна в парите по сметки и депозити. Отрицателна сума означава, че парите са се увеличили",
+    "9501": "Пари по сметки в началото на годината",
+    "9502": "Пари по сметки във валута в началото на годината",
+    "9503": "Срочни депозити в началото на годината",
+    "9507": "Пари по сметки в края на периода",
+    "9508": "Пари по сметки във валута в края на периода",
+    "9509": "Срочни депозити в края на периода",
+}
+
+
+def _cash_position(data: dict[str, Any] | None) -> dict[str, float]:
+    """The figures a reader wants from the financing table, in plain terms:
+    cash held at the year's start and at the period's end, loans taken and
+    loans repaid."""
+    rows = [c for r in (data or {}).get("financing", []) for c in r["children"]]
+    loans = [
+        c["actual_ytd"] or 0.0
+        for r in (data or {}).get("financing", [])
+        if r["paragraph"] in LOAN_PARAGRAPHS
+        for c in r["children"]
+    ]
+    return {
+        "cash_start": sum(c["actual_ytd"] or 0.0 for c in rows if c["paragraph"] in CASH_START),
+        "cash_end": -sum(c["actual_ytd"] or 0.0 for c in rows if c["paragraph"] in CASH_END),
+        "loans_taken": sum(v for v in loans if v > 0),
+        "loans_repaid": -sum(v for v in loans if v < 0),
+    }
+
+
+def _export_lean_table(session: Session, model: Any, columns: list[str], path: Path) -> None:
+    """Dump one of the lean tables (no JSON columns) to CSV as it is stored;
+    writes just the header when the table does not exist yet."""
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(columns)
+        try:
+            for row in session.execute(select(*(getattr(model, c) for c in columns))):
+                writer.writerow(["" if v is None else v for v in row])
+        except OperationalError:
+            pass
+
+
+def _cash_history(periods: list[str], period: str, paid: Any) -> dict[str, Any]:
+    """How one cash figure moved over time, given `paid(period)` -> its
+    cumulative amount at a month's end (or None): each month of `period`'s
+    year on its own (the reports are cumulative from 1 January, so a month
+    is the difference to the one before), every full year, and the same
+    month a year earlier."""
+    year, month = period.split("-")
+    months, before = [], 0.0
+    for p in periods:
+        if p[:4] == year:
+            so_far = paid(p) or 0.0
+            months.append({"label": MONTH_NAMES_BG[int(p[5:])][:3], "value": so_far - before})
+            before = so_far
+    return {
+        "months": months,
+        "years": [{"label": p[:4], "value": paid(p) or 0.0} for p in periods if p.endswith("-12")],
+        "same_period_last_year": paid(f"{int(year) - 1}-{month}"),
+    }
 
 
 # --------------------------------------------------------------------------
@@ -1637,8 +2072,13 @@ def _zdoi_template(
         "носител / по електронен път / преглед на оригинала — моля отбележете "
         "предпочитание) до следните документи:\n\n"
         f"{doc_lines}\n\n"
-        f"Искането е свързано със следната констатация на „Бюджетен монитор "
-        f"Несебър“ ({rule_label}): {message}\n\n"
+        + (
+            f"Искането е свързано със следната констатация на „Бюджетен монитор "
+            f"Несебър“ ({rule_label}): {message}\n\n"
+            if rule_label
+            else ""
+        )
+        +
         "Моля да ми бъде отговорено в законоустановения 14-дневен срок по чл. 28 "
         "ЗДОИ.\n\n"
         "Дата: __________                                   Подпис: __________\n"
@@ -2222,7 +2662,7 @@ def _flag_view(
             subject_href = f"../contracts/{contract.source_id}.html"
             subject_label = contract.title or contract.source_id
     if subject_href is None and subject_type == "contractor" and subject_id:
-        subject_href = f"../contractors/{subject_id}.html"
+        subject_href = f"../contractors/{_slugify(subject_id)}.html"
         subject_label = subject_id
     if subject_href is None and subject_type == "person":
         # No dedicated "people" page yet -- link to the contractors list,
@@ -2336,6 +2776,7 @@ def _make_env() -> Environment:
         lstrip_blocks=True,
     )
     env.filters["eur"] = fmt_eur
+    env.filters["count"] = lambda v: f"{v:,.2f}".rstrip("0").rstrip(".") if v is not None else "—"
     env.filters["num"] = fmt_num
     env.filters["pct"] = fmt_pct
     env.filters["bgdate"] = fmt_date
@@ -2355,6 +2796,11 @@ def _make_env() -> Environment:
     env.globals["tier_order"] = TIER_ORDER
     env.globals["tier_labels"] = TIER_LABELS
     env.globals["tier_tooltips"] = TIER_TOOLTIPS
+    env.globals["glossary"] = GLOSSARY
+    env.globals["paragraph_plain"] = PARAGRAPH_PLAIN
+    env.globals["function_names"] = FUNCTION_NAMES
+    env.globals["later_plain"] = LATER_PLAIN
+    env.globals["fund_ledgers"] = FUND_LEDGERS
     env.globals["repo_url"] = REPO_URL
     # Cache-busting tag for static/style.css and static/app.js: a hash of
     # their contents, so a deploy that changes them is picked up at once
@@ -2448,7 +2894,10 @@ def _export_budget(session: Session, data_dir: Path) -> None:
 
 def _export_cash(session: Session, data_dir: Path) -> None:
     rows = list(session.scalars(select(CashExecutionLine)))
-    fieldnames = ["period", "section", "paragraph", "name", "row_type", "actual_ytd"]
+    fieldnames = [
+        "period", "section", "paragraph", "name", "row_type", "plan", "actual_ytd",
+        "actual_state", "actual_local", "actual_cofinance",
+    ]
     with (data_dir / "cash_execution.csv").open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -2460,7 +2909,11 @@ def _export_cash(session: Session, data_dir: Path) -> None:
                     "paragraph": r.paragraph,
                     "name": r.name,
                     "row_type": (r.extra_json or {}).get("row_type", ""),
+                    "plan": _as_float(r.plan_adjusted),
                     "actual_ytd": _as_float(r.actual_ytd),
+                    "actual_state": (r.extra_json or {}).get("actual_state"),
+                    "actual_local": (r.extra_json or {}).get("actual_local"),
+                    "actual_cofinance": (r.extra_json or {}).get("actual_cofinance"),
                 }
             )
 
@@ -2561,6 +3014,9 @@ def build_site(out_dir: Path, db_url: str | None = None) -> None:
         budget = _load_budget(session)
         budget_changes = _compute_period_changes(budget["periods"], budget["by_period"])
         cash = _load_cash(session)
+        cash_activities = _load_cash_activities(session)
+        funds = _load_funds(session)
+        staff = _load_staff(session)
         minfin = _load_minfin_indicators()
 
         contract_by_proc_id = {c.id: c for c in contracts}
@@ -2606,6 +3062,19 @@ def build_site(out_dir: Path, db_url: str | None = None) -> None:
         _export_contracts(contracts, data_dir)
         _export_budget(session, data_dir)
         _export_cash(session, data_dir)
+        _export_cash_activities(cash_activities, data_dir)
+        _export_lean_table(
+            session, FundLine,
+            ["period", "ledger", "section", "row_type", "paragraph", "parent_paragraph", "name",
+             "activity_code", "programme_code", "programme_name", "plan", "actual"],
+            data_dir / "eu_funds.csv",
+        )
+        _export_lean_table(
+            session, NaturalIndicator,
+            ["year", "basis", "level", "activity_code", "block_title", "indicator_code",
+             "indicator_name", "total", "state", "local", "cofinance", "source_url"],
+            data_dir / "natural_indicators.csv",
+        )
         _export_flags(flags, data_dir)
         _export_companies(all_companies, data_dir)
         _export_company_people(all_company_people, {c.id: c for c in all_companies}, data_dir)
@@ -2755,12 +3224,98 @@ def build_site(out_dir: Path, db_url: str | None = None) -> None:
 
     base_ctx = {"generated_at_label": generated_at_label}
 
+    # Spending by activity in the latest month, biggest first; grouped by
+    # function; and the same rows turned around: which activities each
+    # spending type (§§ or под-§§) goes to.
+    activities_latest = sorted(
+        (
+            a for a in cash_activities.get(latest_cash_period or "", {}).values()
+            if a["name"] and a["actual"]
+        ),
+        key=lambda a: -a["actual"],
+    )
+    by_function: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    paragraph_activities: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for a in activities_latest:
+        by_function[a["code"][0]].append(a)
+        for row in a["rows"]:
+            if row["actual"]:
+                paragraph_activities[row["paragraph"]].append(
+                    {"activity": a, "actual": row["actual"], "plan": row["plan"]}
+                )
+    for shares in paragraph_activities.values():
+        shares.sort(key=lambda d: -d["actual"])
+    functions = sorted(
+        (
+            {
+                "code": digit, "name": FUNCTION_NAMES.get(digit, digit),
+                "actual": sum(a["actual"] for a in members), "activities": members,
+            }
+            for digit, members in by_function.items()
+        ),
+        key=lambda f: -f["actual"],
+    )
+    # §§ and под-§§ names, from the report's own main expenditure table.
+    paragraph_names: dict[str, str] = {}
+    for r in (latest_cash or {}).get("expense_paragraphs", []):
+        paragraph_names[r["paragraph"]] = r["name"]
+        paragraph_names.update({c["paragraph"]: c["name"] for c in r["children"]})
+
+    # Index for the home page's site-wide search (static/app.js): one small
+    # row per place, company and contract, in that order so the broadest
+    # match comes first. `k` kind, `t` title, `x` extra searchable text,
+    # `u` page path from the site root.
+    search_index = (
+        [{"k": "Населено място", "t": s["name"], "u": s["href"]} for s in map_data["settlements"]]
+        + [
+            {
+                "k": "Дейност", "t": a["name"],
+                "x": FUNCTION_NAMES.get(a["code"][0], ""),
+                "u": f"cash/activity-{a['code']}.html",
+            }
+            for a in activities_latest
+        ]
+        + [
+            {
+                "k": "Вид разход", "t": r["name"],
+                "x": PARAGRAPH_PLAIN.get(str(r["paragraph"]), ""),
+                "u": f"cash/{r['paragraph']}.html",
+            }
+            for r in (latest_cash or {}).get("expense_paragraphs", [])
+            if r["actual_ytd"]
+        ]
+        + [
+            {
+                "k": "Фирма", "t": co.name,
+                "x": f"ЕИК {co.eik_display}" if co.eik_published else "",
+                "u": f"contractors/{co.slug}.html",
+            }
+            for co in contractors
+        ]
+        + [
+            {
+                "k": "Договор", "t": c.title or "(без заглавие)",
+                "x": c.contractor_name or "",
+                "u": f"contracts/{c.source_id}.html",
+            }
+            for c in contracts
+        ]
+    )
+    (data_dir / "search.json").write_text(
+        json.dumps(search_index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    )
+
     # -- index --------------------------------------------------------
     _write(
         env, "index.html", out_dir / "index.html",
         {
             **base_ctx, "root": "", "active": "home",
             "contracts_count": len(contracts),
+            "contractors_count": len(contractors),
+            "top_activities": activities_latest[:6],
+            "settlements_with_data": sum(
+                1 for s in map_data["settlements"] if s["all_years"]["objects_count"] > 0
+            ),
             "signed_count": len(signed),
             "open_count": len(open_procs),
             "total_signed_value": sum(c.contract_value_eur or 0 for c in signed),
@@ -2846,30 +3401,226 @@ def build_site(out_dir: Path, db_url: str | None = None) -> None:
         )
 
     # -- cash ------------------------------------------------------
-    cash_chart_items = []
-    if latest_cash:
-        top = latest_cash["expense_paragraphs"][:12]
-        cash_chart_items = [
-            {"label": r["name"], "value": r["actual_ytd"]} for r in top
-        ]
+    # The budget section: an overview page, then one page per view of the
+    # same report (by activity, by type, revenue, money from other budgets,
+    # loans and cash), then a page per activity and per spending type.
+    # People: the newest year of natural indicators. A plan year is paired
+    # with planned salaries, a finished (report) year with what was paid.
+    staff_year = max(staff["years"]) if staff else None
+    staff_views: dict[str, dict[str, Any]] = {}
+    if staff_year:
+        year_data = staff["years"][staff_year]
+        pay_period = (
+            latest_cash_period
+            if year_data["basis"] == "план" and (latest_cash_period or "")[:4] == str(staff_year)
+            else f"{staff_year}-12"
+        )
+        pay_key = "plan" if year_data["basis"] == "план" else "actual"
+        for code, indicators in year_data["by_activity"].items():
+            activity = cash_activities.get(pay_period, {}).get(code) or {}
+            salaries = next(
+                (row[pay_key] for row in activity.get("rows", []) if row["paragraph"] == SALARY_PARAGRAPH),
+                None,
+            )
+            view = _staff_view(staff_year, year_data["basis"], indicators, salaries)
+            view["name"] = activity.get("name") or next(
+                (a["name"] for a in activities_latest if a["code"] == code), None
+            )
+            view["code"] = code
+            staff_views[code] = view
 
-    _write(
-        env, "cash_index.html", out_dir / "cash" / "index.html",
-        {
-            **base_ctx, "root": "../", "active": "cash",
-            "periods": cash["periods"],
-            "latest_period": latest_cash_period,
-            "latest": latest_cash,
-            "minfin": minfin,
-            "cash_chart_items": cash_chart_items,
-        },
-    )
+    cash_nav = [
+        ("overview", "cash/index.html", "Преглед"),
+        ("activities", "cash/activities.html", "Разходи по дейности"),
+        ("types", "cash/types.html", "Разходи по вид"),
+        ("income", "cash/income.html", "Приходи"),
+        ("transfers", "cash/transfers.html", "От държавата"),
+        ("financing", "cash/financing.html", "Заеми и пари по сметки"),
+    ]
+    if funds:
+        cash_nav.append(("eu", "cash/eu.html", "Европейски проекти"))
+    if staff_views:
+        cash_nav.append(("staff", "cash/staff.html", "Служители"))
+    env.globals["cash_nav"] = cash_nav
+    position = _cash_position(latest_cash)
+    cash_ctx = {
+        **base_ctx, "root": "../", "active": "cash",
+        "periods": cash["periods"],
+        "latest_period": latest_cash_period,
+        "latest": latest_cash,
+        "functions": functions,
+        "max_activity": activities_latest[0]["actual"] if activities_latest else 0,
+        "position": position,
+        "funds": funds,
+        "activity_codes": {a["code"] for a in activities_latest},
+    }
+    # Closing cash and loans, year by year (each December).
+    year_ends = [p for p in cash["periods"] if p.endswith("-12")]
+    positions = {p[:4]: _cash_position(cash["by_period"][p]) for p in year_ends}
+    for name, template, extra in (
+        ("index", "cash_index.html", {"minfin": minfin}),
+        ("activities", "cash_activities.html", {}),
+        ("types", "cash_types.html", {}),
+        ("income", "cash_income.html", {}),
+        ("transfers", "cash_transfers.html", {}),
+        (
+            "financing", "cash_financing.html",
+            {
+                "cash_years": [
+                    {"label": year, "value": pos["cash_end"]} for year, pos in positions.items()
+                ],
+                "loan_years": [
+                    {"year": year, **pos} for year, pos in positions.items()
+                    if pos["loans_taken"] or pos["loans_repaid"]
+                ],
+            },
+        ),
+    ):
+        _write(env, template, out_dir / "cash" / f"{name}.html", {**cash_ctx, **extra, "view": name})
+    if funds:
+        _write(env, "cash_eu.html", out_dir / "cash" / "eu.html", cash_ctx)
+    if staff_views:
+        _write(
+            env, "cash_staff.html", out_dir / "cash" / "staff.html",
+            {
+                **cash_ctx,
+                "staff_year": staff_year,
+                "staff_basis": staff["years"][staff_year]["basis"],
+                "staff_total": staff["years"][staff_year]["total"],
+                "staff_rows": sorted(
+                    (v for v in staff_views.values() if v["staff"] and v["name"]),
+                    key=lambda v: -v["staff"],
+                ),
+                "staff_years": [
+                    {"label": str(year), "value": data["total"] or 0.0, "basis": data["basis"]}
+                    for year, data in staff["years"].items()
+                ],
+            },
+        )
+
+    # One page per spending category with money in it (cash/<§>.html): what
+    # it consists of, which activities it goes to, plan against paid, month
+    # by month, year by year, and how to ask for what the report does not
+    # say (who was paid). Then the same for every activity
+    # (cash/activity-<code>.html), seen from the other side.
+    if latest_cash:
+        cash_year, cash_month = latest_cash_period.split("-")
+        last_day = calendar.monthrange(int(cash_year), int(cash_month))[1]
+        through = f"01.01.{cash_year} – {last_day:02d}.{cash_month}.{cash_year} г."
+
+        def paid(period: str, paragraph: str) -> float | None:
+            data = cash["by_period"].get(period)
+            if not data:
+                return None
+            return next(
+                (r["actual_ytd"] for r in data["expense_paragraphs"] if r["paragraph"] == paragraph),
+                None,
+            )
+
+        for r in latest_cash["expense_paragraphs"]:
+            if not r["actual_ytd"]:
+                continue
+            code = _paragraph_code(r["paragraph"])
+            personnel = r["paragraph"] in PERSONNEL_PARAGRAPHS
+            documents = (
+                [
+                    (
+                        f"Справка за броя на заетите (щатни бройки) и средната брутна месечна "
+                        f"заплата по звена и дейности на общината за {cash_year} г."
+                    ),
+                    (
+                        f"Справка за изплатените суми по § {code} „{r['name']}“ по звена и "
+                        f"дейности за периода {through}"
+                    ),
+                ]
+                if personnel
+                else [
+                    (
+                        f"Справка за извършените плащания по § {code} „{r['name']}“ за периода "
+                        f"{through}, с получател, основание (договор или фактура) и сума."
+                    ),
+                    (
+                        f"Справка за изплатените суми по § {code} „{r['name']}“ по звена и "
+                        f"дейности за същия период."
+                    ),
+                ]
+            )
+            _write(
+                env, "cash_detail.html", out_dir / "cash" / f"{r['paragraph']}.html",
+                {
+                    **base_ctx, "root": "../", "active": "cash",
+                    "r": r, "code": code, "personnel": personnel,
+                    "period": latest_cash_period,
+                    "expense_total": latest_cash["expense_total"],
+                    **_cash_history(
+                        cash["periods"], latest_cash_period,
+                        lambda p, par=r["paragraph"]: paid(p, par),
+                    ),
+                    "in_activities": paragraph_activities.get(r["paragraph"], []),
+                    "sub_activities": {
+                        c["paragraph"]: paragraph_activities.get(c["paragraph"], [])[:3]
+                        for c in r["children"]
+                    },
+                    "zdoi_template": _zdoi_template(
+                        "", "", f"плащанията по § {code} „{r['name']}“ за {cash_year} г.", documents
+                    ),
+                },
+            )
+
+        for a in activities_latest:
+            short = a["code"][1:]  # "311": the activity's number within its function
+
+            def paid_activity(period: str, code: str = a["code"]) -> float | None:
+                activity = cash_activities.get(period, {}).get(code)
+                return activity["actual"] if activity else None
+
+            lines = [
+                {
+                    **row,
+                    "children": sorted(
+                        (c for c in a["rows"] if c["parent"] == row["paragraph"]),
+                        key=lambda c: -(c["actual"] or 0),
+                    ),
+                }
+                for row in sorted(
+                    (row for row in a["rows"] if row["parent"] is None),
+                    key=lambda row: -(row["actual"] or 0),
+                )
+            ]
+            _write(
+                env, "cash_activity.html", out_dir / "cash" / f"activity-{a['code']}.html",
+                {
+                    **base_ctx, "root": "../", "active": "cash",
+                    "a": a, "short": short, "lines": lines,
+                    "people": staff_views.get(a["code"]),
+                    "function": FUNCTION_NAMES.get(a["code"][0], ""),
+                    "paragraph_names": paragraph_names,
+                    "period": latest_cash_period,
+                    "expense_total": latest_cash["expense_total"],
+                    **_cash_history(cash["periods"], latest_cash_period, paid_activity),
+                    "zdoi_template": _zdoi_template(
+                        "", "",
+                        f"разходите по дейност {short} „{a['name']}“ за {cash_year} г.",
+                        [
+                            (
+                                f"Справка за извършените плащания по дейност {short} „{a['name']}“ "
+                                f"за периода {through}, с получател, основание (договор или "
+                                f"фактура) и сума, без плащанията към отделни служители."
+                            ),
+                            (
+                                f"Справка за броя на заетите (щатни бройки) и средната брутна "
+                                f"месечна заплата в дейност {short} „{a['name']}“ за {cash_year} г."
+                            ),
+                        ],
+                    ),
+                },
+            )
 
     # -- flags ------------------------------------------------------
     _write(
         env, "flags_index.html", out_dir / "flags" / "index.html",
         {
-            **base_ctx, "root": "../", "active": "flags", "flags": flags,
+            **base_ctx, "root": "../", "active": "flags", "flags": flags_ranked,
             "flag_severity_counts": flag_severity_counts,
             "flag_tier_counts": flag_tier_counts,
         },
@@ -2928,7 +3679,7 @@ def build_site(out_dir: Path, db_url: str | None = None) -> None:
     _write(
         env, "settlements_index.html", out_dir / "settlements" / "index.html",
         {
-            **base_ctx, "root": "../", "active": "map",
+            **base_ctx, "root": "../", "active": "settlements",
             "settlements": map_data["settlements"],
             "unassigned": map_data["unassigned"],
             "last_years": last_years,
@@ -2937,7 +3688,7 @@ def build_site(out_dir: Path, db_url: str | None = None) -> None:
     for s in map_data["settlements"]:
         _write(
             env, "settlement_detail.html", out_dir / "settlements" / f"{s['key']}.html",
-            {**base_ctx, "root": "../", "active": "map", "s": s, "notes": map_data["notes"]},
+            {**base_ctx, "root": "../", "active": "settlements", "s": s, "notes": map_data["notes"]},
         )
 
 

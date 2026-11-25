@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% set year = latest_period[:4] if latest_period else "" %}
+{% set budget_crumb = [("Бюджет", root ~ "cash/index.html")] %}
+{% set basis_text = "по план" if staff_basis == "план" else "по отчет" %}
+{% block title %}Служители — Бюджет — Бюджетен монитор Несебър{% endblock %}
+{% block content %}
+<div class="container">
+  {% call m.page_head("", "Служители", crumbs=budget_crumb) %}
+  Колко души работят във всяка дейност на общината и колко е средната заплата там, за {{ staff_year }} г. {{ basis_text }}. Заплатите на отделните хора не се публикуват; тук са само общите числа.
+  <span class="page-head__note">Броят на щатните бройки е от годишния файл „натурални показатели“ на общината. Заплатите са от отчета за бюджета. Средната заплата е изчислена от сайта: заплати за годината, разделени на щатните бройки и на 12 месеца.</span>
+  {% endcall %}
+  {{ m.section_nav(cash_nav, "staff", root) }}
+  {{ m.help_box(["deynost", "plan", "darzhavni"]) }}
+
+  <div class="stats stats--2" role="list">
+    <div class="stat" role="listitem">
+      <span class="stat__label">Щатни бройки в общината, {{ staff_year }} г.</span>
+      <span class="stat__value"><span class="figure">{{ staff_total | count }}</span></span>
+      <span class="stat__note">{{ basis_text | capitalize }}, заедно с училищата, детските градини и общинските предприятия</span>
+    </div>
+    <div class="stat" role="listitem">
+      <span class="stat__label">Дейности с щатен персонал</span>
+      <span class="stat__value"><span class="figure">{{ staff_rows | length }}</span></span>
+      <span class="stat__note">Изберете дейност, за да видите всичките ѝ разходи</span>
+    </div>
+  </div>
+
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">По дейности</h2>
+      <p class="block__sub">Подредени по брой щатни бройки. Средна заплата не се показва при по-малко от пет щатни бройки и когато заплатите в отчета не отговарят на броя хора.</p>
+    </div>
+    <div class="table-wrap">
+    <table class="table table--stack table--staff" data-sortable>
+      <thead><tr><th data-sort="none">Дейност</th><th data-sort="none" class="num">Щатни бройки</th><th data-sort="none" class="num">Заплати за годината</th><th data-sort="none" class="num">Средно на месец</th></tr></thead>
+      <tbody>
+      {% for v in staff_rows %}
+      <tr>
+        <td>{% if v.code in activity_codes %}<a class="row-link" href="{{ root }}cash/activity-{{ v.code }}.html">{{ v.name }}</a>{% else %}{{ v.name }}{% endif %}<span class="sub">{{ function_names.get(v.code[0], "") }}</span></td>
+        <td class="num" data-sort-value="{{ v.staff }}">{{ m.cell_label("Щатни бройки") }}{{ v.staff | count }}</td>
+        <td class="num" data-sort-value="{{ v.salaries or 0 }}">{{ m.cell_label("Заплати за годината") }}{% if v.salaries %}{{ v.salaries | eur }}{% else %}<span class="muted">няма данни</span>{% endif %}</td>
+        <td class="num" data-sort-value="{{ v.average or 0 }}">{{ m.cell_label("Средно на месец") }}{% if v.average %}{{ v.average | eur }}{% else %}<span class="muted">не е изчислено</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="footnote">Числата са {{ basis_text }} за {{ staff_year }} г.: {% if staff_basis == "план" %}планирани щатни бройки и планирани заплати. Реално заетите и реално платеното могат да се различават.{% else %}отчетени щатни бройки и реално платени заплати.{% endif %} Заплатите са брутни и не включват осигуровките за сметка на работодателя, които са отделен разход.</p>
+  </section>
+
+  {% if staff_years | length > 1 %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Щатни бройки по години</h2>
+      <p class="block__sub">Общо за общината. {% for y in staff_years %}{{ y.label }} г. е {{ "по план" if y.basis == "план" else "по отчет" }}{{ ", " if not loop.last else "." }}{% endfor %} За годините между тях общината не е публикувала такъв файл.</p>
+    </div>
+    <div class="card">{{ m.vbar_chart(staff_years, fmt_num, height=220, label="Щатни бройки по години") }}</div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

@@ -3,71 +3,112 @@
 {% block title %}Бюджетен монитор Несебър — къде отиват парите на общината{% endblock %}
 {% block content %}
 
-{# ---- Hero + headline numbers ------------------------------------------ #}
+{# ---- Hero: the question, a search, and where the answers are ------------- #}
 <section class="hero">
   <div class="container">
-    <a class="hero__badge" href="{{ root }}data/index.html">
-      <span class="dot dot--accent" aria-hidden="true"></span>
-      <span>Обновено {{ generated_at_label[:10] }}</span>
-      <span class="hero__badge-sep" aria-hidden="true"></span>
-      <span class="hero__badge-link">Отворени данни {{ m.chevron() }}</span>
-    </a>
     <h1 class="hero__title">Къде отиват парите<br class="hero__br"> на Община Несебър?</h1>
-    <p class="hero__sub">Независим граждански монитор на обществените поръчки и бюджета на общината —
-    по публичните данни на ЦАИС ЕОП, СИГМА и месечните отчети на nesebar.bg.</p>
+    <p class="hero__sub">Вижте за какво плаща общината, кои фирми получават договорите и какво е
+    направено във вашето населено място. Всичко е от официални публични данни.</p>
+
+    <form class="sitesearch" role="search" data-site-search="{{ root }}data/search.json" data-root="{{ root }}">
+      <label class="sitesearch__label" for="site-search">Търсене в целия сайт</label>
+      <div class="search">
+        <svg class="search__icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="6" cy="6" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m9.25 9.25 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <input class="input" type="search" id="site-search" placeholder="Фирма, улица или населено място" autocomplete="off" aria-describedby="site-search-hint">
+      </div>
+      <p class="sitesearch__hint" id="site-search-hint">Например „Равда“, „ул. Хан Крум“ или име на фирма.</p>
+      <div class="sitesearch__results" data-site-search-results aria-live="polite"></div>
+    </form>
+
     <a class="trust-line" href="{{ root }}methodology.html#no-ai">
+      <span>Обновено {{ generated_at_label[:10] }}</span><span aria-hidden="true">·</span>
       <span>Без изкуствен интелект</span><span aria-hidden="true">·</span>
-      <span>Публичен код</span><span aria-hidden="true">·</span>
       <span>Всяко число с източник</span>
     </a>
-    <div class="hero__actions">
-      <a class="btn btn--primary" href="{{ root }}flags/index.html">Виж сигналите</a>
-      <a class="btn btn--ghost" href="{{ root }}contracts/index.html">Разгледай поръчките</a>
-    </div>
-
-    <div class="stats stats--4" role="list">
-      <a class="stat" role="listitem" href="{{ root }}contracts/index.html">
-        <span class="stat__label">Договори{% if first_year %} {{ first_year }}–{{ last_year }}{% endif %}</span>
-        <span class="stat__value">{{ m.figure(total_signed_value) }}</span>
-        <span class="stat__note">{{ signed_count | num }} подписани · {{ open_count | num }} текущи процедури</span>
-      </a>
-      {% if latest_budget %}
-      {% set gt = latest_budget.grand_total %}
-      <a class="stat" role="listitem" href="{{ root }}budget/index.html">
-        <span class="stat__label">Капиталов план {{ latest_budget_period[:4] }}</span>
-        <span class="stat__value">{{ m.figure(gt.spent_period) }}</span>
-        {{ m.meter(gt.pct_executed, label=(gt.pct_executed | pct) ~ " изпълнение") }}
-        <span class="stat__note"><strong>{{ gt.pct_executed | pct }}</strong> от плана {{ gt.plan_current | eur }}</span>
-      </a>
-      {% endif %}
-      {% if latest_cash %}
-      <a class="stat" role="listitem" href="{{ root }}cash/index.html">
-        <span class="stat__label">Касов разход {{ latest_cash_period[:4] }}</span>
-        <span class="stat__value">{{ m.figure(latest_cash.expense_total) }}</span>
-        <span class="stat__note">От началото на годината до {{ latest_cash_period | period }}</span>
-      </a>
-      {% endif %}
-      <a class="stat" role="listitem" href="{{ root }}flags/index.html">
-        <span class="stat__label">Отворени сигнали <span class="muted">· {{ all_time_flag_count | num }} за цялото време</span></span>
-        <span class="stat__value"><span class="figure">{{ flags_total | num }}</span></span>
-        <span class="stat__note sev-breakdown">
-          {% for key in severity_order %}
-          <span title="Тежест: {{ severity_labels[key] }}"><span class="dot dot--{{ key }}" aria-hidden="true"></span>{{ flag_severity_counts[key] | num }} {{ {"high": "високи", "warning": "средни", "info": "ниски"}[key] }}</span>
-          {% endfor %}
-        </span>
-      </a>
-    </div>
-    {% if single_bidder_pct_label %}
-    <p class="muted">Конкуренция: <strong>{{ single_bidder_pct_label }}%</strong> ({{ single_bidder_count | num }} от {{ single_bidder_known | num }} подписани договора с данни за броя оферти) са сключени с един участник.</p>
-    {% endif %}
   </div>
 </section>
+
+{# ---- Start here: one card per question a visitor arrives with ------------ #}
+<section class="section">
+  <div class="container">
+    <h2 class="section-head__title">Какво искате да разберете?</h2>
+    <ul class="qcards">
+      {% if latest_cash %}
+      <li><a class="qcard" href="{{ root }}cash/index.html">
+        <h3 class="qcard__q">За какво плаща общината?</h3>
+        <p class="qcard__a"><strong>{{ latest_cash.expense_total | eur }}</strong> са платени от началото на {{ latest_cash_period[:4] }} г. до {{ latest_cash_period | period }}: заплати, издръжка, помощи, строежи.</p>
+        <span class="link-arrow">Бюджет {{ m.chevron() }}</span>
+      </a></li>
+      {% endif %}
+      {% if latest_budget %}
+      {% set gt = latest_budget.grand_total %}
+      <li><a class="qcard" href="{{ root }}budget/index.html">
+        <h3 class="qcard__q">Какво строи и купува?</h3>
+        <p class="qcard__a"><strong>{{ gt.spent_period | eur }}</strong> са платени от планирани {{ gt.plan_current | eur }} за {{ latest_budget_period[:4] }} г., обект по обект.</p>
+        {{ m.meter(gt.pct_executed, label=(gt.pct_executed | pct) ~ " от плана") }}
+        <span class="link-arrow">Инвестиции {{ m.chevron() }}</span>
+      </a></li>
+      {% endif %}
+      <li><a class="qcard" href="{{ root }}contracts/index.html">
+        <h3 class="qcard__q">Какви договори сключва?</h3>
+        <p class="qcard__a"><strong>{{ signed_count | num }}</strong> подписани договора за {{ total_signed_value | eur }}{% if first_year %} от {{ first_year }} г. досега{% endif %} и {{ open_count | num }} поръчки, за които се избира изпълнител.</p>
+        <span class="link-arrow">Договори {{ m.chevron() }}</span>
+      </a></li>
+      <li><a class="qcard" href="{{ root }}contractors/index.html">
+        <h3 class="qcard__q">Кои фирми получават договорите?</h3>
+        <p class="qcard__a"><strong>{{ contractors_count | num }}</strong> фирми, подредени по общата стойност на договорите им с общината.</p>
+        <span class="link-arrow">Фирми {{ m.chevron() }}</span>
+      </a></li>
+      <li><a class="qcard" href="{{ root }}settlements/index.html">
+        <h3 class="qcard__q">Какво е направено в моето населено място?</h3>
+        <p class="qcard__a">Строежи, ремонти и покупки в <strong>{{ settlements_with_data | num }}</strong> населени места, като списък и на карта.</p>
+        <span class="link-arrow">Населени места {{ m.chevron() }}</span>
+      </a></li>
+      <li><a class="qcard" href="{{ root }}flags/index.html">
+        <h3 class="qcard__q">Какво заслужава обяснение?</h3>
+        <p class="qcard__a"><strong>{{ flags_total | num }}</strong> автоматично открити несъответствия в данните. Те са повод за въпроси, а не доказателство за нарушение.</p>
+        <span class="link-arrow">Сигнали {{ m.chevron() }}</span>
+      </a></li>
+    </ul>
+  </div>
+</section>
+
+{# ---- Where the money went this year: the biggest activities ------------- #}
+{% if latest_cash and top_activities %}
+{% set max_cat = top_activities[0].actual %}
+<section class="section">
+  <div class="container">
+    <div class="section-head">
+      <h2 class="section-head__title">За какво плати общината през {{ latest_cash_period[:4] }} г.</h2>
+      <p class="section-head__text">Шестте дейности с най-големи разходи от началото на годината до
+      {{ latest_cash_period | period }}, от общо {{ latest_cash.expense_total | eur }}. Изберете ред, за да видите
+      за какво точно е платено.</p>
+    </div>
+    <div class="table-wrap">
+    <table class="table table--bars table--stack">
+      <thead><tr><th class="col-par">Дял</th><th>Дейност</th><th class="col-meter"><span class="visually-hidden">Относителен размер</span></th><th class="num">Платено</th></tr></thead>
+      <tbody>
+      {% for a in top_activities %}
+      <tr>
+        <td class="muted tnum">{{ (a.actual / latest_cash.expense_total) | pct if latest_cash.expense_total else "" }}</td>
+        <td><a class="row-link row-link--stretch" href="{{ root }}cash/activity-{{ a.code }}.html">{{ a.name }} {{ m.chevron() }}</a><span class="sub">{{ function_names.get(a.code[0], "") }}</span></td>
+        <td class="col-meter">{{ m.meter(a.actual / max_cat if max_cat else 0, "accent" if loop.first else "muted") }}</td>
+        <td class="num">{{ m.cell_label("Платено") }}{{ a.actual | eur }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="more"><a class="link-arrow" href="{{ root }}cash/activities.html">Всички дейности {{ m.chevron() }}</a> <a class="link-arrow" href="{{ root }}cash/index.html">Целият бюджет: приходи, разходи, заеми {{ m.chevron() }}</a></p>
+  </div>
+</section>
+{% endif %}
 
 {# ---- Latest flags --------------------------------------------------------- #}
 <section class="section">
   <div class="container">
     <div class="section-head">
-      <h2 class="section-head__title">Последни сигнали</h2>
+      <h2 class="section-head__title">Случаи, които заслужават обяснение</h2>
       <p class="section-head__text">Автоматично откроени несъответствия в договорите и бюджета.
       Всеки сигнал е повод за въпрос, не доказателство за нарушение.</p>
     </div>
@@ -92,7 +133,10 @@
       <h2 class="section-head__title">Договори по години</h2>
       <p class="section-head__text">Обща стойност на подписаните договори според датата на сключване,
       по данни от ЦАИС ЕОП.</p>
-      <p class="more"><a class="link-arrow" href="{{ root }}contracts/index.html">Всички поръчки {{ m.chevron() }}</a></p>
+      {% if single_bidder_pct_label %}
+      <p class="section-head__text">При <strong>{{ single_bidder_pct_label }}%</strong> от тях ({{ single_bidder_count | num }} от {{ single_bidder_known | num }} договора с известен брой оферти) е участвала само една фирма.</p>
+      {% endif %}
+      <p class="more"><a class="link-arrow" href="{{ root }}contracts/index.html">Всички договори {{ m.chevron() }}</a></p>
     </div>
     <div class="card split__visual">
       {% if year_chart_items %}
@@ -114,7 +158,7 @@
         <p class="how__index">01</p>
         <h3>Източници</h3>
         <p>Поръчки от ЦАИС ЕОП, обогатени с броя оферти от СИГМА; бюджет и касово изпълнение от отчетите на nesebar.bg.</p>
-        <a class="link-arrow" href="{{ root }}methodology.html">Методология {{ m.chevron() }}</a>
+        <a class="link-arrow" href="{{ root }}methodology.html">Как работи сайтът {{ m.chevron() }}</a>
       </div>
       <div class="how__item">
         <p class="how__index">02</p>

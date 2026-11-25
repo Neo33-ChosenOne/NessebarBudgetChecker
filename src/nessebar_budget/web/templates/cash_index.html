@@ -1,50 +1,143 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
-{% block title %}Касово изпълнение — Бюджетен монитор Несебър{% endblock %}
+{% set year = latest_period[:4] if latest_period else "" %}
+{% set budget_crumb = [("Бюджет", root ~ "cash/index.html")] %}
+{% block title %}Бюджет — Бюджетен монитор Несебър{% endblock %}
 {% block content %}
 <div class="container">
-  {% call m.page_head("Касово изпълнение", "Касово изпълнение на бюджета") %}
-  Реално извършените плащания по параграфи от началото на {{ latest_period[:4] if latest_period else "" }} г.{% if latest_period %} до {{ latest_period | period }}{% endif %} — по отчет „Б1" на nesebar.bg.
+  {% call m.page_head("Бюджет", "Бюджетът на общината за " ~ year ~ " г.") %}
+  Откъде идват парите и за какво отиват, от началото на годината{% if latest_period %} до {{ latest_period | period }}{% endif %}. Строежите и покупките са показани обект по обект на страница <a href="{{ root }}budget/index.html">Инвестиции</a>.
+  <span class="page-head__note">Източник: месечният отчет на общината за касовото изпълнение на бюджета (отчет „Б1“ на nesebar.bg).</span>
   {% endcall %}
+  {{ m.section_nav(cash_nav, "overview", root) }}
+  {{ m.help_box(["kasovo", "deynost", "funkcia", "darzhavni", "transfer", "saldo", "nalichnosti"]) }}
 
   {% if not latest %}
-  <p class="empty">Няма заредени данни за касово изпълнение.</p>
+  <p class="empty">Няма заредени данни за изпълнението на бюджета.</p>
   {% else %}
-  {% set max_cat = (latest.expense_paragraphs | map(attribute='actual_ytd') | select('number') | max) if latest.expense_paragraphs else 0 %}
-  <div class="stats stats--2" role="list">
+  {% set own = latest.income_total or 0 %}
+  {% set other = (latest.transfers_total or 0) + (latest.temp_loans_total or 0) %}
+  {% set spent = latest.expense_total or 0 %}
+  {% set came_in = own + other %}
+  {% set gap = came_in - spent %}
+
+  <div class="stats stats--3" role="list">
     <div class="stat" role="listitem">
-      <span class="stat__label">Разходи от началото на годината</span>
-      <span class="stat__value">{{ m.figure(latest.expense_total) }}</span>
+      <span class="stat__label">Постъпило от началото на годината</span>
+      <span class="stat__value">{{ m.figure(came_in) }}</span>
+      <span class="stat__note">Собствени приходи и пари от държавата</span>
+    </div>
+    <div class="stat" role="listitem">
+      <span class="stat__label">Платено от началото на годината</span>
+      <span class="stat__value">{{ m.figure(spent) }}</span>
       <span class="stat__note">Към {{ latest_period | period }}</span>
     </div>
     <div class="stat" role="listitem">
-      <span class="stat__label">Приходи от началото на годината</span>
-      <span class="stat__value">{{ m.figure(latest.income_total) }}</span>
-      <span class="stat__note">Разликата се покрива от преходен остатък, заеми и др.</span>
+      <span class="stat__label">Пари по сметките в края на периода</span>
+      <span class="stat__value">{{ m.figure(position.cash_end) }}</span>
+      <span class="stat__note">В началото на годината: {{ position.cash_start | eur }}</span>
     </div>
   </div>
+  {% if latest.transfers_total is not none %}
+  <p class="lead">{% if gap < 0 %}Платено е с <strong>{{ (0 - gap) | eur }}</strong> повече, отколкото е постъпило. Разликата е покрита със заеми и с пари, налични от предходни години.{% else %}Постъпило е с <strong>{{ gap | eur }}</strong> повече, отколкото е платено. Излишъкът е отишъл за връщане на заеми и по сметките на общината.{% endif %} <a href="{{ root }}cash/financing.html">Заеми и пари по сметки</a></p>
 
   <section class="block">
     <div class="block__head">
-      <h2 class="block__title">Разходи по категории</h2>
-      <p class="block__sub">Касови разходи по §-параграф от началото на годината, подредени по размер.</p>
+      <h2 class="block__title">Откъде идват парите</h2>
+      <p class="block__sub">Две са големите източници: това, което общината събира сама, и това, което получава от държавата. Изберете ред за подробности.</p>
     </div>
     <div class="table-wrap">
     <table class="table table--bars table--stack">
-      <thead><tr><th class="col-par">§</th><th>Наименование</th><th class="col-meter"><span class="visually-hidden">Относителен размер</span></th><th class="num">Разход</th></tr></thead>
+      <thead><tr><th class="col-par">Дял</th><th>Източник</th><th class="col-meter"><span class="visually-hidden">Относителен размер</span></th><th class="num">Постъпило</th></tr></thead>
       <tbody>
-      {% for r in latest.expense_paragraphs %}
       <tr>
-        <td class="muted tnum">{{ r.paragraph }}</td>
-        <td>{{ r.name }}</td>
-        <td class="col-meter">{{ m.cell_label("Дял от разходите") }}{{ m.meter((r.actual_ytd or 0) / max_cat if max_cat else 0, "accent" if loop.first else "muted") }}</td>
-        <td class="num">{{ m.cell_label("Разход") }}{{ r.actual_ytd | eur }}</td>
+        <td class="muted tnum">{{ (own / came_in) | pct if came_in else "" }}</td>
+        <td><a class="row-link row-link--stretch" href="{{ root }}cash/income.html">Собствени приходи {{ m.chevron() }}</a><span class="sub">Местни данъци, такси, наеми, продажби, глоби</span></td>
+        <td class="col-meter">{{ m.meter(own / came_in if came_in else 0) }}</td>
+        <td class="num">{{ own | eur }}</td>
+      </tr>
+      <tr>
+        <td class="muted tnum">{{ (other / came_in) | pct if came_in else "" }}</td>
+        <td><a class="row-link row-link--stretch" href="{{ root }}cash/transfers.html">От държавата и други бюджети {{ m.chevron() }}</a><span class="sub">Държавната субсидия и други преводи, след приспадане на върнатото</span></td>
+        <td class="col-meter">{{ m.meter(other / came_in if came_in else 0, "muted") }}</td>
+        <td class="num">{{ other | eur }}</td>
+      </tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if functions %}
+  {% set max_function = functions[0].actual %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">За какво отиват парите</h2>
+      <p class="block__sub">Разходите по големите области на работа на общината. Изберете област, за да видите дейностите в нея, или вижте същите пари <a href="{{ root }}cash/types.html">по вид разход</a>: заплати, издръжка, строежи.</p>
+    </div>
+    <div class="table-wrap">
+    <table class="table table--bars table--stack">
+      <thead><tr><th class="col-par">Дял</th><th>Област</th><th class="col-meter"><span class="visually-hidden">Относителен размер</span></th><th class="num">Платено</th></tr></thead>
+      <tbody>
+      {% for f in functions %}
+      <tr>
+        <td class="muted tnum">{{ (f.actual / spent) | pct if spent else "" }}</td>
+        <td><a class="row-link row-link--stretch" href="{{ root }}cash/activities.html#f-{{ f.code }}">{{ f.name }} {{ m.chevron() }}</a><span class="sub">{% for a in f.activities[:3] %}{{ a.name }}{{ ", " if not loop.last }}{% endfor %}{% if f.activities | length > 3 %} и още {{ f.activities | length - 3 }}{% endif %}</span></td>
+        <td class="col-meter">{{ m.meter(f.actual / max_function if max_function else 0, "accent" if loop.first else "muted") }}</td>
+        <td class="num">{{ f.actual | eur }}</td>
       </tr>
       {% endfor %}
       </tbody>
     </table>
     </div>
   </section>
+  {% endif %}
+
+  {% if latest.expense_split and (latest.expense_split.state or latest.expense_split.local) %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Кой плаща разходите</h2>
+      <p class="block__sub">Същите разходи, разделени според това чии пари са: на държавата или на общината.</p>
+    </div>
+    {{ m.funding_split(latest.expense_split.state, latest.expense_split.local, latest.expense_split.cofinance) }}
+  </section>
+  {% endif %}
+
+  {% if funds and funds.spent %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Извън бюджета: европейски проекти</h2>
+      <p class="block__sub">По европейски и други международни проекти общината е платила още <strong>{{ funds.spent | eur }}</strong> от началото на годината. Тези пари минават през отделни сметки и не са в сумите по-горе. <a href="{{ root }}cash/eu.html">Европейски проекти</a></p>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if latest.financing %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Заеми и пари по сметки</h2>
+      <p class="block__sub">С какви пари общината е започнала годината, колко има сега и какви заеми е взела и върнала. <a href="{{ root }}cash/financing.html">Подробности</a></p>
+    </div>
+    <div class="stats stats--4" role="list">
+      <div class="stat" role="listitem">
+        <span class="stat__label">Пари в началото на годината</span>
+        <span class="stat__value">{{ m.figure(position.cash_start) }}</span>
+      </div>
+      <div class="stat" role="listitem">
+        <span class="stat__label">Пари в края на периода</span>
+        <span class="stat__value">{{ m.figure(position.cash_end) }}</span>
+      </div>
+      <div class="stat" role="listitem">
+        <span class="stat__label">Взети заеми</span>
+        <span class="stat__value">{{ m.figure(position.loans_taken) }}</span>
+      </div>
+      <div class="stat" role="listitem">
+        <span class="stat__label">Върнати заеми</span>
+        <span class="stat__value">{{ m.figure(position.loans_repaid) }}</span>
+      </div>
+    </div>
+  </section>
+  {% endif %}
 
   {% if minfin %}
   <section class="block">

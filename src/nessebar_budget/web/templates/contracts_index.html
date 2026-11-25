@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
-{% block title %}Поръчки и договори — Бюджетен монитор Несебър{% endblock %}
+{% block title %}Договори — Бюджетен монитор Несебър{% endblock %}
 {% block content %}
 {% set signed_total = contracts | selectattr("is_signed") | list | length %}
 <div class="container">
-  {% call m.page_head("Поръчки", "Обществени поръчки и договори") %}
-  Всички {{ contracts | length | num }} записа на Община Несебър в ЦАИС ЕОП — подписани договори и текущи
-  процедури, с броя подадени оферти от СИГМА, когато е известен.
+  {% call m.page_head("Договори", "Договори и обществени поръчки") %}
+  Всички {{ contracts | length | num }} записа на Община Несебър в държавната платформа за обществени поръчки: подписани договори и поръчки, за които още се избира изпълнител.
   {% endcall %}
+  {{ m.help_box(["poruchka", "procedura", "oferti", "ochakvana", "eop", "sigma", "eik"]) }}
 
   {% if year_chart_items %}
   <section class="block">
@@ -27,9 +27,18 @@
       <label class="select">
         <span class="visually-hidden">Статус</span>
         <select class="input" data-table-filter="signed" aria-label="Филтър по статус">
-          <option value="">Всички статуси</option>
+          <option value="">Подписани и неподписани</option>
           <option value="yes">Подписани договори</option>
-          <option value="no">Текущи процедури</option>
+          <option value="no">Още без изпълнител</option>
+        </select>
+      </label>
+      <label class="select">
+        <span class="visually-hidden">Година</span>
+        <select class="input" data-table-filter="year" aria-label="Филтър по година">
+          <option value="">Всички години</option>
+          {% for y in year_rows | map(attribute='year') | sort(reverse=true) %}
+          <option value="{{ y }}">{{ y }}</option>
+          {% endfor %}
         </select>
       </label>
       {{ m.count(contracts | length) }}
@@ -50,11 +59,11 @@
       <tbody>
       {% for c in contracts %}
         {% set d = c.contract_date or c.published_at %}
-        <tr data-signed="{{ 'yes' if c.is_signed else 'no' }}">
+        <tr data-signed="{{ 'yes' if c.is_signed else 'no' }}" data-year="{{ c.year or '' }}">
           <td class="nowrap muted" data-sort-value="{{ d.isoformat() if d else '' }}">{{ d | bgdate }}</td>
           <td><a class="row-link clamp-2" href="{{ root }}contracts/{{ c.source_id }}.html">{{ c.title or '(без заглавие)' }}</a></td>
           <td>{% if c.contractor_name %}<span class="clamp-2 muted-strong">{{ c.contractor_name }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
-          <td class="num" data-sort-value="{{ c.display_value_eur or 0 }}">{{ c.display_value_eur | eur }}{% if not c.is_signed %}<span class="sub">прогноза</span>{% endif %}</td>
+          <td class="num" data-sort-value="{{ c.display_value_eur or 0 }}">{% if c.is_signed and not c.display_value_eur %}<span class="muted">няма посочена цена</span>{% else %}{{ c.display_value_eur | eur }}{% endif %}{% if not c.is_signed %}<span class="sub">очаквана цена</span>{% endif %}</td>
           <td class="num" data-label="Оферти" data-sort-value="{{ c.bids_received if c.bids_received is not none else -1 }}">{% if c.bids_received is not none %}{{ c.bids_received | num }}{% else %}<span class="muted">—</span>{% endif %}</td>
           <td>{% if c.procedure_type %}{{ m.chip(c.procedure_type) }}{% else %}<span class="muted">—</span>{% endif %}</td>
           <td class="col-src"><a class="ext" href="{{ c.url }}" rel="noopener" title="Отвори в ЦАИС ЕОП">ЕОП <span aria-hidden="true">↗</span></a></td>
@@ -63,8 +72,8 @@
       </tbody>
     </table>
     </div>
-    <p class="footnote">„Прогноза" — процедурата още няма сключен договор; показана е прогнозната стойност.
-    Броят оферти идва от СИГМА — виж <a href="{{ root }}methodology.html#dedupe">как се съпоставят двата източника</a>.</p>
+    <p class="footnote">„Очаквана цена“ е при поръчки, за които още няма сключен договор: показана е цената, която общината очаква да плати.
+    Броят оферти идва от държавния регистър СИГМА. Виж <a href="{{ root }}methodology.html#dedupe">как се съпоставят двата източника</a>.</p>
   </section>
 </div>
 {% endblock %}

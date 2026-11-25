@@ -4,9 +4,15 @@
    --------------------------------------------------------------------- #}
 
 {# Page header: small uppercase eyebrow, large title, one muted sentence. #}
-{% macro page_head(eyebrow, title, back_href="", back_label="") %}
+{# `crumbs` (a list of (label, href), outermost first) shows where a page
+   sits when it is two or more levels down; a single back link otherwise. #}
+{% macro page_head(eyebrow, title, back_href="", back_label="", crumbs=[]) %}
 <header class="page-head">
-  {% if back_href %}
+  {% if crumbs %}
+  <nav class="crumbs" aria-label="Къде се намирате">
+    <ol>{% for label, href in crumbs %}<li><a href="{{ href }}">{{ label }}</a></li>{% endfor %}<li aria-current="page">{{ title }}</li></ol>
+  </nav>
+  {% elif back_href %}
   <a class="page-head__back" href="{{ back_href }}"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 2.5 4 6l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ back_label }}</a>
   {% elif eyebrow %}
   <p class="eyebrow">{{ eyebrow }}</p>
@@ -15,6 +21,91 @@
   {% if caller %}<div class="page-head__sub">{{ caller() }}</div>{% endif %}
 </header>
 {% endmacro %}
+
+{# "What do the words on this page mean": a closed-by-default box listing
+   the glossary entries (keys of `glossary`, defined in build.py) a page
+   uses, so nobody needs prior knowledge and nobody has to read them twice. #}
+{% macro help_box(keys, summary="Какво означават думите на тази страница") -%}
+<details class="help">
+  <summary class="help__summary">{{ chevron() }}<span>{{ summary }}</span></summary>
+  <dl class="help__list">
+    {% for key in keys %}
+    <div><dt>{{ glossary[key][0] }}</dt><dd>{{ glossary[key][1] }}</dd></div>
+    {% endfor %}
+  </dl>
+</details>
+{%- endmacro %}
+
+{# Links between the pages of one section (the views of the budget), with
+   the current one marked. Wraps onto more lines on a phone; never scrolls. #}
+{% macro section_nav(items, current, root) -%}
+<nav class="subnav" aria-label="В този раздел">
+  {% for key, href, label in items %}
+  <a href="{{ root }}{{ href }}"{% if key == current %} aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>
+{%- endmacro %}
+
+{# One table of a cash report as a list: every category (§§) that carries
+   money, biggest first, with its sub-categories under it and, where `plain`
+   has one, a plain-words line under the official name. Amounts can be
+   negative (money returned or repaid), so bars show the size, not the sign. #}
+{% macro ledger_table(rows, name_label, amount_label, plain={}) -%}
+{% set shown = rows | selectattr("actual_ytd") | list %}
+{% set biggest = (shown | map(attribute="actual_ytd") | map("abs") | max) if shown else 0 %}
+<div class="table-wrap">
+<table class="table table--bars table--stack">
+  <thead><tr><th class="col-par">§</th><th>{{ name_label }}</th><th class="col-meter"><span class="visually-hidden">Относителен размер</span></th><th class="num">{{ amount_label }}</th></tr></thead>
+  <tbody>
+  {% for r in shown %}
+  <tr>
+    <td class="muted tnum">{{ r.paragraph }}</td>
+    <td class="strong">{{ (r.name or "") | trim(" :") }}{% if plain.get(r.paragraph) %}<span class="sub">{{ plain[r.paragraph] }}</span>{% endif %}</td>
+    <td class="col-meter">{{ meter((r.actual_ytd | abs) / biggest if biggest else 0, "accent" if loop.first else "muted") }}</td>
+    <td class="num">{{ r.actual_ytd | eur }}{% if r.plan %}<span class="sub">план {{ r.plan | eur }}</span>{% endif %}</td>
+  </tr>
+  {% for c in r.children if c.actual_ytd %}
+  <tr class="subrow">
+    <td class="muted tnum">{{ c.paragraph }}</td>
+    <td>{{ (c.name or "") | trim(" :") | capitalize }}{% if plain.get(c.paragraph) %}<span class="sub">{{ plain[c.paragraph] }}</span>{% endif %}</td>
+    <td class="col-meter"></td>
+    <td class="num">{{ c.actual_ytd | eur }}</td>
+  </tr>
+  {% endfor %}
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{%- endmacro %}
+
+{# Who funds an amount: the report splits everything into activities the
+   state delegates and pays for, local ones, and local money added to state
+   ones. Rendered as three plain rows; nothing if the split is unknown. #}
+{% macro funding_split(state, local, cofinance) -%}
+{% set parts = [
+  ("Държавни дейности", "Възложени от държавата и платени с държавни пари: училища, детски градини, социални услуги", state or 0),
+  ("Местни дейности", "Платени със собствените приходи на общината: чистота, улици, осветление, администрация", local or 0),
+  ("Дофинансиране", "Собствени пари на общината, добавени към държавни дейности", cofinance or 0),
+] %}
+{% set whole = (state or 0) + (local or 0) + (cofinance or 0) %}
+{% if whole %}
+<div class="table-wrap">
+<table class="table table--bars table--stack">
+  <thead><tr><th class="col-par">Дял</th><th>Кой плаща</th><th class="col-meter"><span class="visually-hidden">Относителен размер</span></th><th class="num">Платено</th></tr></thead>
+  <tbody>
+  {% for label, hint, amount in parts if amount %}
+  <tr>
+    <td class="muted tnum">{{ (amount / whole) | pct }}</td>
+    <td class="strong">{{ label }}<span class="sub">{{ hint }}</span></td>
+    <td class="col-meter">{{ meter(amount / whole, "muted") }}</td>
+    <td class="num">{{ amount | eur }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{%- endmacro %}
 
 {# Big tile figure: comma-grouped number with a smaller muted unit. #}
 {% macro figure(value, unit="€") -%}

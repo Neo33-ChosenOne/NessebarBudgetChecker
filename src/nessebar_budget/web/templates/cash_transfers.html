@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% set year = latest_period[:4] if latest_period else "" %}
+{% set budget_crumb = [("Бюджет", root ~ "cash/index.html")] %}
+{% block title %}От държавата — Бюджет — Бюджетен монитор Несебър{% endblock %}
+{% block content %}
+<div class="container">
+  {% call m.page_head("", "Пари от държавата и други бюджети", crumbs=budget_crumb) %}
+  Преводите между общината и държавния бюджет, други бюджетни организации и сметките за европейски проекти{% if latest_period %}, от началото на {{ year }} г. до {{ latest_period | period }}{% endif %}. Положителна сума е получена, отрицателна е преведена или върната.
+  {% endcall %}
+  {{ m.section_nav(cash_nav, "transfers", root) }}
+  {{ m.help_box(["transfer", "darzhavni", "kasovo", "plan"]) }}
+
+  {% if not latest %}
+  <p class="empty">Няма заредени данни за изпълнението на бюджета.</p>
+  {% else %}
+  {% if latest.transfers_total is none %}
+  <p class="empty">За този период няма заредени данни за трансферите.</p>
+  {% else %}
+  <div class="stats stats--2" role="list">
+    <div class="stat" role="listitem">
+      <span class="stat__label">Получено от други бюджети, нето</span>
+      <span class="stat__value">{{ m.figure(latest.transfers_total) }}</span>
+      <span class="stat__note">Към {{ latest_period | period }}</span>
+    </div>
+    <div class="stat" role="listitem">
+      <span class="stat__label">Временни заеми между сметки, нето</span>
+      <span class="stat__value">{{ m.figure(latest.temp_loans_total or 0) }}</span>
+      <span class="stat__note">Отрицателна сума: общината временно е дала пари</span>
+    </div>
+  </div>
+
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Трансфери</h2>
+      <p class="block__sub">Най-големият е общата субсидия, с която държавата плаща възложените от нея дейности. Под сумата е планът за годината.</p>
+    </div>
+    {{ m.ledger_table(latest.transfers, "Трансфер", "Сума", later_plain) }}
+  </section>
+
+  {% if latest.temp_loans | selectattr("actual_ytd") | list %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Временни безлихвени заеми</h2>
+      <p class="block__sub">Пари, прехвърлени за кратко между бюджета и други сметки, които се връщат по-късно.</p>
+    </div>
+    {{ m.ledger_table(latest.temp_loans, "Заем", "Сума", later_plain) }}
+  </section>
+  {% endif %}
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

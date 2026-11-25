@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% set year = latest_period[:4] if latest_period else "" %}
+{% set budget_crumb = [("Бюджет", root ~ "cash/index.html")] %}
+{% block title %}Заеми и пари по сметки — Бюджет — Бюджетен монитор Несебър{% endblock %}
+{% block content %}
+<div class="container">
+  {% call m.page_head("", "Заеми и пари по сметки", crumbs=budget_crumb) %}
+  С какви пари общината е започнала годината, колко има по сметките си сега и какви заеми е взела и върнала{% if latest_period %}, от началото на {{ year }} г. до {{ latest_period | period }}{% endif %}. Това е частта от отчета, която показва как е покрита разликата между постъпило и платено.
+  {% endcall %}
+  {{ m.section_nav(cash_nav, "financing", root) }}
+  {{ m.help_box(["nalichnosti", "saldo", "kasovo", "darzhavni"]) }}
+
+  {% if not latest %}
+  <p class="empty">Няма заредени данни за изпълнението на бюджета.</p>
+  {% else %}
+  {% if not latest.financing %}
+  <p class="empty">За този период няма заредени данни за финансирането.</p>
+  {% else %}
+  <div class="stats stats--4" role="list">
+    <div class="stat" role="listitem">
+      <span class="stat__label">Пари в началото на годината</span>
+      <span class="stat__value">{{ m.figure(position.cash_start) }}</span>
+      <span class="stat__note">По сметки и депозити на 1 януари</span>
+    </div>
+    <div class="stat" role="listitem">
+      <span class="stat__label">Пари в края на периода</span>
+      <span class="stat__value">{{ m.figure(position.cash_end) }}</span>
+      <span class="stat__note">{% if position.cash_end >= position.cash_start %}С {{ (position.cash_end - position.cash_start) | eur }} повече{% else %}С {{ (position.cash_start - position.cash_end) | eur }} по-малко{% endif %}</span>
+    </div>
+    <div class="stat" role="listitem">
+      <span class="stat__label">Взети заеми</span>
+      <span class="stat__value">{{ m.figure(position.loans_taken) }}</span>
+      <span class="stat__note">От началото на годината</span>
+    </div>
+    <div class="stat" role="listitem">
+      <span class="stat__label">Върнати заеми</span>
+      <span class="stat__value">{{ m.figure(position.loans_repaid) }}</span>
+      <span class="stat__note">Главница, без лихвите</span>
+    </div>
+  </div>
+  <p class="footnote">Отчетът показва взетите и върнатите заеми през годината, но не и общия размер на дълга. Платените лихви са сред <a href="{{ root }}cash/types.html">видовете разходи</a>.</p>
+
+  {% if latest.balances %}
+  {% set whole = latest.balances[0].actual_ytd %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">От какво се състоят парите по сметките</h2>
+      <p class="block__sub">Откъде са дошли парите, които общината има в края на периода, и каква част от тях е на срочен депозит.</p>
+    </div>
+    <div class="table-wrap">
+    <table class="table table--bars table--stack">
+      <thead><tr><th class="col-par">Дял</th><th>Произход на парите</th><th class="col-meter"><span class="visually-hidden">Относителен размер</span></th><th class="num">Сума</th></tr></thead>
+      <tbody>
+      {% for b in latest.balances[1:] %}
+      {% set group = (b.paragraph | int) % 1000 == 0 %}
+      <tr{% if not group %} class="subrow"{% endif %}>
+        <td class="muted tnum">{{ (b.actual_ytd / whole) | pct if group and whole else "" }}</td>
+        <td{% if group %} class="strong"{% endif %}>{{ b.name | trim(" :,") }}</td>
+        <td class="col-meter">{% if group %}{{ m.meter(b.actual_ytd / whole if whole else 0, "muted") }}{% endif %}</td>
+        <td class="num">{{ b.actual_ytd | eur }}{% if group and b.on_deposit %}<span class="sub">от тях на депозит {{ b.on_deposit | eur }}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Всички редове от отчета</h2>
+      <p class="block__sub">Положителна сума е източник на пари (взет заем, пари от началото на годината). Отрицателна е използване (върнат заем, пари, останали в края).</p>
+    </div>
+    {{ m.ledger_table(latest.financing, "Операция", "Сума", later_plain) }}
+  </section>
+
+  {% set held = funds.ledgers.get("K33") if funds else none %}
+  {% if held and held.balances %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Чужди пари по сметките на общината</h2>
+      <p class="block__sub">Пари, които общината държи, но не са нейни: гаранции и депозити, внесени от фирми и граждани. Те са в отделна сметка и не са част от сумите по-горе.</p>
+    </div>
+    <dl class="facts">
+      {% for b in held.balances %}
+      <div class="facts__row"><dt>{{ b.name | trim(" :,") | replace("1. ", "") | replace("2. ", "") }}</dt><dd class="tnum">{{ b.actual_ytd | eur }}</dd></div>
+      {% endfor %}
+    </dl>
+  </section>
+  {% endif %}
+
+  {% if cash_years | length > 1 %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Пари по сметките в края на всяка година</h2>
+      <p class="block__sub">По сметки и депозити на 31 декември, {{ cash_years[0].label }}–{{ cash_years[-1].label }} г. Сумите до 2025 г. са преизчислени от левове в евро по официалния курс.</p>
+    </div>
+    <div class="card">{{ m.vbar_chart(cash_years, fmt_eur, height=220, label="Пари по сметките в края на годината") }}</div>
+  </section>
+  {% endif %}
+
+  {% if loan_years %}
+  <section class="block">
+    <div class="block__head">
+      <h2 class="block__title">Заеми по години</h2>
+      <p class="block__sub">Взети и върнати заеми за всяка цяла година.</p>
+    </div>
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Година</th><th class="num">Взети</th><th class="num">Върнати</th></tr></thead>
+      <tbody>
+      {% for y in loan_years | reverse %}
+      <tr><td>{{ y.year }}</td><td class="num">{{ y.loans_taken | eur }}</td><td class="num">{{ y.loans_repaid | eur }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% endif %}
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

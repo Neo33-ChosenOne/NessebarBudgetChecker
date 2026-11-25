@@ -3,9 +3,10 @@
 {% block title %}{{ co.name }} — Бюджетен монитор Несебър{% endblock %}
 {% block content %}
 <div class="container">
-  {% call m.page_head("", co.name, root ~ "contractors/index.html", "Всички изпълнители") %}
+  {% call m.page_head("", co.name, root ~ "contractors/index.html", "Всички фирми") %}
   ЕИК {{ co.eik_display }}
   {% endcall %}
+  {{ m.help_box(["eik", "tr", "gfo", "oferti"]) }}
 
   <div class="stats stats--3" role="list">
     <div class="stat" role="listitem">
@@ -19,7 +20,7 @@
       <span class="stat__note">{{ co.share_of_total | pct }} от всички подписани договори</span>
     </div>
     <div class="stat" role="listitem">
-      <span class="stat__label">Един участник</span>
+      <span class="stat__label">Дял с една оферта</span>
       <span class="stat__value">{% if co.single_bidder_share is not none %}<span class="figure">{{ co.single_bidder_share | pct }}</span>{% else %}<span class="figure figure--muted">—</span>{% endif %}</span>
       <span class="stat__note">{% if co.single_bidder_known %}от {{ co.single_bidder_known | num }} договора с известен брой оферти{% else %}няма данни от СИГМА{% endif %}</span>
     </div>

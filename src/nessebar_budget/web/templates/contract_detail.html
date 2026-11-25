@@ -3,12 +3,13 @@
 {% block title %}{{ c.title or c.source_id }} — Бюджетен монитор Несебър{% endblock %}
 {% block content %}
 <div class="container">
-  {% call m.page_head("", c.title or "(без заглавие)", root ~ "contracts/index.html", "Всички поръчки") %}
+  {% call m.page_head("", c.title or "(без заглавие)", root ~ "contracts/index.html", "Всички договори") %}
   <span class="meta-row">
-    {% if c.is_signed %}{{ m.chip("Подписан договор", "accent") }}{% else %}{{ m.chip("Текуща процедура", "neutral") }}{% endif %}
+    {% if c.is_signed %}{{ m.chip("Подписан договор", "accent") }}{% else %}{{ m.chip("Избира се изпълнител", "neutral") }}{% endif %}
     <span>№ {{ c.source_id }} в ЦАИС ЕОП</span>
   </span>
   {% endcall %}
+  {{ m.help_box(["poruchka", "procedura", "oferti", "ochakvana", "cpv", "eop", "sigma"]) }}
 
   <section class="block">
     <dl class="facts">
@@ -18,7 +19,7 @@
       </div>
       {% if c.is_signed and c.estimated_value_eur is not none %}
       <div class="facts__row">
-        <dt>Прогнозна стойност (преди възлагане)</dt>
+        <dt>Очаквана цена преди избора на изпълнител</dt>
         <dd class="tnum">{{ c.estimated_value_eur | eur }}</dd>
       </div>
       {% endif %}
@@ -113,6 +114,15 @@
     <p class="empty">Няма регистрирани сигнали по тази поръчка.</p>
     {% endif %}
     <p class="more"><a class="link-arrow" href="{{ root }}flags/index.html">Всички сигнали {{ m.chevron() }}</a></p>
+  </section>
+
+  <section class="block">
+    <h2 class="block__title">Вижте още</h2>
+    <p class="more">
+      {% if c.contractor_slug %}<a class="link-arrow" href="{{ root }}contractors/{{ c.contractor_slug }}.html">Всички договори на {{ c.contractor_name or 'тази фирма' }} {{ m.chevron() }}</a><br>{% endif %}
+      {% if c.location and c.location.settlement_key and c.location.settlement %}<a class="link-arrow" href="{{ root }}settlements/{{ c.location.settlement_key }}.html">Какво още е правено в {{ c.location.settlement }} {{ m.chevron() }}</a><br>{% endif %}
+      <a class="link-arrow" href="{{ root }}contracts/index.html">Всички договори {{ m.chevron() }}</a>
+    </p>
   </section>
 
   <section class="block">

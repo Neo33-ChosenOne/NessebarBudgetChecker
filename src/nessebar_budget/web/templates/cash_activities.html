@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% set year = latest_period[:4] if latest_period else "" %}
+{% set budget_crumb = [("Бюджет", root ~ "cash/index.html")] %}
+{% block title %}Разходи по дейности — Бюджет — Бюджетен монитор Несебър{% endblock %}
+{% block content %}
+<div class="container">
+  {% call m.page_head("", "Разходи по дейности", crumbs=budget_crumb) %}
+  За какво служат парите: училища, чистота, улици, администрация. Дейностите са подредени в деветте области на бюджета, от най-голямата към най-малката. Изберете ред, за да видите за какво точно е платено в тази дейност{% if latest_period %} от началото на {{ year }} г. до {{ latest_period | period }}{% endif %}.
+  {% endcall %}
+  {{ m.section_nav(cash_nav, "activities", root) }}
+  {{ m.help_box(["deynost", "funkcia", "kasovo", "darzhavni"]) }}
+
+  {% if not latest %}
+  <p class="empty">Няма заредени данни за изпълнението на бюджета.</p>
+  {% else %}
+  {% if functions %}
+  <section class="block">
+    {% for f in functions %}
+    <h2 class="group-title" id="f-{{ f.code }}"><span>{{ f.name }}</span><span>{{ f.actual | eur }}</span></h2>
+    <div class="table-wrap">
+    <table class="table table--bars table--stack">
+      <thead class="visually-hidden"><tr><th>Код</th><th>Дейност</th><th>Относителен размер</th><th>Платено</th></tr></thead>
+      <tbody>
+      {% for a in f.activities %}
+      <tr>
+        <td class="muted tnum col-par">{{ a.code[1:] }}</td>
+        <td><a class="row-link row-link--stretch" href="{{ root }}cash/activity-{{ a.code }}.html">{{ a.name }} {{ m.chevron() }}</a></td>
+        <td class="col-meter">{{ m.cell_label("Дял от разходите") }}{{ m.meter(a.actual / max_activity if max_activity else 0, "accent" if a.actual == max_activity else "muted") }}</td>
+        <td class="num">{{ m.cell_label("Платено") }}{{ a.actual | eur }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

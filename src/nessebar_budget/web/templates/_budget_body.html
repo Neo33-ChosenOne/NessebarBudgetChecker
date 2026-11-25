@@ -2,11 +2,23 @@
    Expects: data (one period's dict), period, periods, changes, root, m. #}
 {% import "_macros.html" as m %}
 {% set year = period[:4] %}
-<nav class="segmented" aria-label="Избор на месец">
-  {% for p in periods %}
-  <a href="{{ root }}budget/{{ p }}.html"{% if p == period %} aria-current="page"{% endif %}>{{ p | period }}</a>
-  {% endfor %}
-</nav>
+{# The month picker opens on request: six years of months would otherwise
+   push this month's numbers a screen and a half down on a phone. #}
+<details class="help">
+  <summary class="help__summary">{{ m.chevron() }}<span>Справка към {{ period | period }}. Изберете друг месец</span></summary>
+  <nav class="months" aria-label="Избор на месец">
+    {% for yr in periods | map("truncate", 4, True, "", 0) | unique | sort(reverse=true) %}
+    <div class="months__row">
+      <span class="months__year">{{ yr }}</span>
+      <span class="segmented segmented--wrap">
+        {% for p in periods if p[:4] == yr | string %}
+        <a href="{{ root }}budget/{{ p }}.html"{% if p == period %} aria-current="page"{% endif %} aria-label="{{ p | period }}">{{ (p | period).split(" ")[0] }}</a>
+        {% endfor %}
+      </span>
+    </div>
+    {% endfor %}
+  </nav>
+</details>
 
 <div class="stats stats--3" role="list">
   <div class="stat" role="listitem">
@@ -15,7 +27,7 @@
     <span class="stat__note">Последен приет план към {{ period | period }}</span>
   </div>
   <div class="stat" role="listitem">
-    <span class="stat__label">Изразходвано</span>
+    <span class="stat__label">Платено</span>
     <span class="stat__value">{{ m.figure(data.grand_total.spent_period) }}</span>
     {{ m.meter(data.grand_total.pct_executed, label=(data.grand_total.pct_executed | pct) ~ " изпълнение") }}
     <span class="stat__note"><strong>{{ data.grand_total.pct_executed | pct }}</strong> от годишния план</span>
