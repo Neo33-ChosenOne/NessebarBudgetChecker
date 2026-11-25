@@ -1,17 +1,20 @@
-name: OSN decisions sync
+name: OSN invites and decisions sync
 
-# Copies council decisions newly published on os-nessebar.eu to the OSN site:
-# compares the council's listing with what OSN already holds, prints each new
-# session's page to PDF and uploads it. The council publishes about one
-# session a month, a few days after it is held, so a weekly check picks each
-# one up within a week and does nothing the rest of the time.
+# Copies council documents newly published on os-nessebar.eu to the OSN site:
+# the invitation to each session and the decisions it took. For each kind it
+# compares the council's listing with what OSN already holds, prints every
+# newer page to PDF and uploads it.
+#
+# It runs twice a day because an invitation is published only 1-8 days before
+# its session and is useless afterwards. Most runs find nothing new and upload
+# nothing.
 #
 # Needs three repository secrets: OSN_API_URL (e.g. https://host, no trailing
 # slash), OSN_USERNAME, OSN_PASSWORD. A manual run defaults to a dry run: the
 # PDFs land in the run's artifacts and nothing is uploaded.
 on:
   schedule:
-    - cron: "0 7 * * 1"
+    - cron: "0 5,16 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -19,7 +22,7 @@ on:
         type: boolean
         default: true
       limit:
-        description: "Send at most this many sessions, oldest first (0 = all)"
+        description: "Send at most this many of each kind, oldest first (0 = all)"
         type: number
         default: 0
 
@@ -27,7 +30,7 @@ permissions:
   contents: read
 
 concurrency:
-  # Two overlapping runs would both see the same session as new and upload it twice.
+  # Two overlapping runs would both see the same item as new and upload it twice.
   group: osn-decisions-sync
   cancel-in-progress: false
 
@@ -50,7 +53,7 @@ jobs:
           pip install -e .
           playwright install --with-deps chromium
 
-      - name: Sync new decisions
+      - name: Sync new invites and decisions
         env:
           OSN_API_URL: ${{ secrets.OSN_API_URL }}
           OSN_USERNAME: ${{ secrets.OSN_USERNAME }}
@@ -61,6 +64,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: osn-decisions
-          path: data/cache/osn_decisions
+          name: osn-pdfs
+          path: data/cache/osn_sync
           if-no-files-found: ignore
