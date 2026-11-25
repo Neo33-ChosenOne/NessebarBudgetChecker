@@ -210,6 +210,77 @@ def scrape_command(
     )
 
 
+@app.command("backfill-cash-pages")
+def backfill_cash_pages_command() -> None:
+    """Read the pages of the cash reports that older versions skipped (the
+    per-activity pages, the transfers and financing tables) for every period
+    that already has cash rows, from the report files in the local cache.
+    One-off for a database older than those; `parse-budget` keeps them up to
+    date afterwards. Leaves the revenue/expenditure rows alone, and skips
+    (and lists) periods whose file is not on disk."""
+    from nessebar_budget.db.budget_repo import backfill_cash_pages
+
+    init_db()
+    with get_session() as session:
+        result = backfill_cash_pages(session)
+        session.commit()
+    console.print(
+        f"[green]backfill-cash-pages[/green]: {result['reports']} report(s), "
+        f"{result['rows']} row(s) stored."
+    )
+    for item in result["missing"]:
+        console.print(f"[yellow]MISSING[/yellow] {item}")
+
+
+@app.command("backfill-fund-lines")
+def backfill_fund_lines_command() -> None:
+    """Fill `fund_lines` (EU-funds ledgers DES/DMP/KSF/RA and third-party
+    funds K33) from the IB1/IB3 report files in the local cache: per ledger
+    and period the preferred file on disk (IB3 over IB1). Touches no other
+    table; lists periods whose file is not on disk."""
+    from nessebar_budget.db.budget_repo import backfill_fund_lines
+
+    init_db()
+    with get_session() as session:
+        result = backfill_fund_lines(session)
+        session.commit()
+    console.print(
+        f"[green]backfill-fund-lines[/green]: {result['reports']} report(s), "
+        f"{result['rows']} row(s) stored."
+    )
+    for item in result["missing"]:
+        console.print(f"[yellow]MISSING[/yellow] {item}")
+
+
+_NATURI_FILE_ARGUMENT = typer.Argument(
+    ..., help="A downloaded Naturi_*.xls / NaturiPokazateli_*.xlsx file."
+)
+
+
+@app.command("import-natural-indicators")
+def import_natural_indicators_command(
+    path: Path = _NATURI_FILE_ARGUMENT,
+    url: str = typer.Option(
+        None, "--url",
+        help="Where the file was published. Its folder decides plan or report: "
+        "/budget/ is the year's plan, /otcheti/ a finished year's report.",
+    ),
+) -> None:
+    """Import one year's "натурални показатели" workbook (staff numbers and
+    other head-counts per activity) into `natural_indicators`, replacing that
+    year's rows. The municipality publishes one a year, so this is a manual
+    step: download the file from nesebar.bg/reports.html and run this. Import
+    newer years before 2019: the 2019 form has activity names without codes,
+    matched against the names the newer files carry."""
+    from nessebar_budget.db.staff_repo import import_natural_indicators
+
+    init_db()
+    with get_session() as session:
+        stored = import_natural_indicators(session, path, url)
+        session.commit()
+    console.print(f"[green]import-natural-indicators[/green]: {path.name}: {stored} row(s) stored.")
+
+
 @app.command("parse-budget")
 def parse_budget_command(
     period: str = typer.Option(
@@ -223,7 +294,8 @@ def parse_budget_command(
         help="Delete every parsed line item first and re-parse all cached files from scratch.",
     ),
 ) -> None:
-    """Parse cached budget-report files (kinds `B1`, `B3` and `capital_xlsx`)
+    """Parse cached budget-report files (kinds `B1`, `B3`, `capital_xlsx` and the
+    `IB1_*`/`IB3_*` fund ledgers)
     into `CashExecutionLine`/`BudgetLineItem`, and print a summary.
 
     Each file's period is read from its own header (not the nesebar.bg
@@ -251,6 +323,8 @@ def parse_budget_command(
     table.add_row("Stale line items deleted", str(summary.rows_deleted))
     table.add_row("Budget line items (capital ledger)", str(summary.line_items))
     table.add_row("Cash execution lines (B1/B3)", str(summary.cash_lines))
+    table.add_row("Cash lines by activity (B1/B3)", str(summary.activity_lines))
+    table.add_row("Fund lines (IB1/IB3 ledgers)", str(summary.fund_lines))
     table.add_row("Validation mismatches logged", str(summary.mismatches))
     console.print(table)
 

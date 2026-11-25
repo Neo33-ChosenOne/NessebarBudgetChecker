@@ -25,9 +25,15 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 import nessebar_budget.db.budget_models  # noqa: F401 -- registers the line-item tables
-from nessebar_budget.db.budget_models import BudgetLineItem, CashExecutionLine
+from nessebar_budget.db.budget_models import (
+    BudgetLineItem,
+    CashActivityLine,
+    CashExecutionLine,
+    FundLine,
+)
 from nessebar_budget.db.budget_repo import (
     ReportCandidate,
+    backfill_fund_lines,
     group_candidates,
     parse_budget_reports,
     preference_key,
@@ -35,8 +41,8 @@ from nessebar_budget.db.budget_repo import (
 )
 from nessebar_budget.db.models import Base
 from nessebar_budget.parsers import budget_b1, budget_capital
+from nessebar_budget.parsers.budget_b1 import ACTIVITY_TOTAL, parse_budget_b1
 from nessebar_budget.parsers.budget_b1 import BGN_PER_EUR as B1_BGN_PER_EUR
-from nessebar_budget.parsers.budget_b1 import parse_budget_b1
 from nessebar_budget.parsers.budget_capital import BGN_PER_EUR as CAPITAL_BGN_PER_EUR
 from nessebar_budget.parsers.budget_capital import parse_budget_capital
 from nessebar_budget.scrapers.nesebar_site import classify_filename
@@ -46,6 +52,7 @@ CAPITAL_XLSX = SAMPLES / "nesebar_budget_execution_aug2026.xlsx"
 CAPITAL_XLSX_2021_BGN = SAMPLES / "nesebar_budget_execution_feb2021_BGN.xlsx"
 B1_XLS = SAMPLES / "nesebar_cash_execution_B1_2026_8.xls"
 B1_XLS_2020_BGN = SAMPLES / "nesebar_cash_execution_B1_2020_1_BGN.xls"
+KSF_XLS = SAMPLES / "nesebar_eu_funds_IB1_2026_8_KSF.xls"
 B3_XLS_2019_BGN = SAMPLES / "nesebar_cash_execution_B3_2019_1_BGN.xls"
 
 RATE = 1.95583
@@ -295,10 +302,106 @@ def test_b1_revenue_table_nonempty(b1_result):
     assert len(revenue) > 0
 
 
-def test_b1_documents_skipped_pages(b1_result):
-    """The sheet has many more report pages than revenue+expenditure; the
-    parser should say so rather than silently dropping them."""
-    assert b1_result["skipped"]
+def _section_totals(result):
+    return {
+        r["section"]: r["actual_ytd"]
+        for r in result["rows"]
+        if r["extra_json"]["row_type"] == "section_total"
+    }
+
+
+@pytest.mark.parametrize("path", [B1_XLS, B1_XLS_2020_BGN, B3_XLS_2019_BGN])
+def test_b1_reads_every_page_and_the_books_close(path):
+    """Every page of the sheet is accounted for (nothing left in `skipped`),
+    and the report's own identity holds across the tables read: revenue minus
+    expenditure, plus transfers and temporary loans, is the balance that
+    financing covers (V = I - II + III + IV, VI = -V)."""
+    result = parse_budget_b1(path)
+    assert result["skipped"] == []
+    totals = _section_totals(result)
+    balance = (
+        totals["приходи"] - totals["разходи"] + totals["трансфери"] + totals["временни заеми"]
+    )
+    assert balance + totals["финансиране"] == pytest.approx(0, abs=0.05)
+    # The later tables keep only rows that carry money (and their total).
+    later = [r for r in result["rows"] if r["section"] in ("трансфери", "финансиране")]
+    assert 0 < len(later) < 60
+    assert all(
+        r["extra_json"]["row_type"] == "section_total"
+        or any(r["extra_json"].get(k) for k in budget_b1._MONEY_FIELDS)
+        for r in later
+    )
+
+
+def test_b1_cash_balances_by_source(b1_result):
+    """The NALICHNOST sheet: what the cash at the period's end consists of.
+    Its grand total is the closing cash the financing table reports (as
+    negative §§ 95-07..95-12 rows)."""
+    balances = [r for r in b1_result["rows"] if r["section"] == budget_b1.BALANCES_SECTION]
+    total = next(r for r in balances if r["extra_json"]["row_type"] == "section_total")
+    closing = -sum(
+        r["actual_ytd"]
+        for r in b1_result["rows"]
+        if r["section"] == "финансиране" and r["paragraph"] in {"9507", "9508", "9509", "9510", "9511", "9512"}
+    )
+    assert total["actual_ytd"] == pytest.approx(closing) and closing > 0
+    assert total["extra_json"]["source_sheet"] == "NALICHNOST"
+    parts = [r for r in balances if r["paragraph"].endswith("000")]  # the roman-numeral groups
+    assert sum(r["actual_ytd"] for r in parts) == pytest.approx(total["actual_ytd"])
+
+
+def _activity_totals(result):
+    return {
+        a["activity_code"]: a for a in result["activities"] if a["paragraph"] == ACTIVITY_TOTAL
+    }
+
+
+def test_b1_activities_add_up_to_total_expenditure(b1_result):
+    """The per-activity pages are the same money as the main expenditure
+    table, split by what it is for: an activity's own rows add up to its
+    total, and the activities add up to all expenditure."""
+    activities = b1_result["activities"]
+    totals = _activity_totals(b1_result)
+    assert len(totals) == 46
+    assert totals["1122"]["activity_name"] == "Общинска администрация"
+    assert totals["3311"]["activity_name"] == "Детски градини"
+
+    all_expenditure = next(
+        r for r in b1_result["rows"]
+        if r["section"] == "разходи" and r["extra_json"]["row_type"] == "section_total"
+    )
+    assert sum(t["actual"] for t in totals.values()) == pytest.approx(all_expenditure["actual_ytd"])
+    for code, total in totals.items():
+        own = sum(
+            a["actual"] or 0
+            for a in activities
+            if a["activity_code"] == code
+            and a["parent_paragraph"] is None
+            and a["paragraph"] != ACTIVITY_TOTAL
+        )
+        assert own == pytest.approx(total["actual"]), code
+
+    # Sub-rows point at the §§ they belong to; empty rows are not stored.
+    food = next(a for a in activities if a["activity_code"] == "1117" and a["paragraph"] == "1011")
+    assert food["parent_paragraph"] == "1000" and food["actual"] == 463
+    assert all(a["plan"] or a["actual"] for a in activities)
+
+
+@pytest.mark.parametrize("path", [B1_XLS_2020_BGN, B3_XLS_2019_BGN])
+def test_b1_activities_in_older_bgn_files(path):
+    """Before 2026 the page's opening row has no "оп/дейност" label and the
+    amounts are in leva; the activities are still found, converted, and
+    still add up to all expenditure (to the cent rounding of each row)."""
+    result = parse_budget_b1(path)
+    totals = _activity_totals(result)
+    assert len(totals) > 30 and "1122" in totals
+    all_expenditure = next(
+        r for r in result["rows"]
+        if r["section"] == "разходи" and r["extra_json"]["row_type"] == "section_total"
+    )
+    assert sum(t["actual"] for t in totals.values()) == pytest.approx(
+        all_expenditure["actual_ytd"], abs=0.5
+    )
 
 
 def test_b1_eur_marker_no_original_block(b1_result):
@@ -506,7 +609,8 @@ def test_capital_rows_carry_source_sheet_and_row(path, capital_result, capital_r
 
 @pytest.mark.parametrize("path", [B1_XLS, B1_XLS_2020_BGN, B3_XLS_2019_BGN])
 def test_cash_rows_carry_source_sheet_and_row(path):
-    rows = parse_budget_b1(path)["rows"]
+    # (The cash-balance rows come from their own sheet and are checked above.)
+    rows = [r for r in parse_budget_b1(path)["rows"] if r["section"] != budget_b1.BALANCES_SECTION]
     assert rows
     assert all(r["extra_json"]["source_sheet"] == "OTCHET" for r in rows)
     assert all(isinstance(r["extra_json"]["source_row"], int) for r in rows)
@@ -560,7 +664,7 @@ def test_cash_preference_b3_over_b1_and_grouping():
     other_month = _cand(12, "B1", "B1_2022_7_5206.xls", period="2022-07")
     capital = _cand(13, "capital_xlsx", "Месечен отчет за 2022 Юни 5206 Несебър.xlsx")
     no_period = _cand(14, "B1", "B1_x.xls", period=None)
-    not_parseable = _cand(15, "IB3_DES", "IB3_2022_2_5206_DES.xls")
+    not_parseable = _cand(15, "other", "IB3_2022_2_5206_XYZ.xls")
 
     groups = group_candidates([b1, b3, other_month, capital, no_period, not_parseable])
     assert [c.report_id for c in groups[("cash", "2022-06")]] == [11, 10]
@@ -657,6 +761,11 @@ def test_parse_budget_reports_periods_dedupe_and_cleanup(budget_db):
     # Rows only for the chosen files, at the detected period; stale row gone.
     cash = session.scalars(select(CashExecutionLine)).all()
     assert {r.report_id for r in cash} == {b3.id, b1_2020.id}
+    # The per-activity rows follow the same choice of file.
+    by_activity = session.scalars(select(CashActivityLine)).all()
+    assert {r.report_id for r in by_activity} == {b3.id, b1_2020.id}
+    assert {r.period for r in by_activity if r.report_id == b3.id} == {"2019-03"}
+    assert summary.activity_lines == len(by_activity) > 0
     assert {r.period for r in cash if r.report_id == b3.id} == {"2019-03"}
     capital = session.scalars(select(BudgetLineItem)).all()
     assert {r.report_id for r in capital} == {cap.id}
@@ -673,7 +782,8 @@ def test_parse_budget_reports_periods_dedupe_and_cleanup(budget_db):
     assert again.rows_deleted == 0 and again.periods_changed == 0
     rebuilt = parse_budget_reports(session, rebuild=True)
     session.commit()
-    assert rebuilt.files_parsed == summary.files_parsed == 3
+    # 3 -> 4: the fixture's IB1_K33 report is now a parsed (fund) kind.
+    assert rebuilt.files_parsed == summary.files_parsed == 4
     assert (
         len(session.scalars(select(CashExecutionLine)).all()),
         len(session.scalars(select(BudgetLineItem)).all()),
@@ -697,3 +807,87 @@ def test_rescrape_keeps_content_period(budget_db):
     assert (b3.period, b3.kind, b3.parsed_json["heading_period"]) == ("2019-03", "B3", "2019-04")
     assert b3.parsed_json["row_count"] > 0
     assert non_ledger.kind == "other"
+
+
+# -- EU-funds / third-party-funds ledgers (IB1_*/IB3_*) -----------------------
+
+
+def test_ksf_programme_pages_parse_and_add_up():
+    """KSF pages open with a programme code/name and a "ПЕРИОД" line instead
+    of the plain "ДЕЙНОСТ - код" row; the same activity can recur."""
+    result = parse_budget_b1(KSF_XLS)
+    assert not any("not recognised" in note for note in result["skipped"])
+    totals = [a for a in result["activities"] if a["paragraph"] == ACTIVITY_TOTAL]
+    assert {t["programme_code"] for t in totals} == {"98215", "98301"}
+    assert {t["programme_name"] for t in totals if t["programme_code"] == "98215"} == {
+        'ЕФРР - ОП "Околна среда"'
+    }
+    assert all(t["activity_name"] and t["programme_name"] for t in totals)
+    keys = [(t["programme_code"], t["activity_code"]) for t in totals]
+    assert len(keys) == len(set(keys)) == 7
+    assert all(a["programme_name"] is None for a in result["activities"] if a not in totals)
+    spent = next(
+        r["actual_ytd"] for r in result["rows"] if r["section"] == "разходи" and r["extra_json"]["row_type"] == "section_total"
+    )
+    assert abs(sum(t["actual"] for t in totals) - spent) < 1
+
+
+def test_b1_activities_have_no_programme():
+    assert {a["programme_code"] for a in parse_budget_b1(B1_XLS)["activities"]} == {None}
+
+
+def test_fund_ledgers_stored_ib3_beats_ib1_and_cash_untouched(budget_db, tmp_path):
+    import shutil
+
+    session, reports = budget_db
+    cache = tmp_path / "cache"
+    new = []
+    for kind, name, period in (
+        ("IB1_KSF", "IB1_2026_8_5206_KSF.xls", "2026-08"),
+        ("IB3_KSF", "IB3_2026_8_5206_KSF.xls", "2026-08"),  # same content: period is what counts
+    ):
+        shutil.copy(KSF_XLS, cache / name)
+        new.append(
+            upsert_budget_report(
+                session,
+                {"url": f"https://x/{name}", "kind": kind, "period": period,
+                 "file_path": str(cache / name), "parsed_json": {}},
+            )
+        )
+    session.commit()
+    summary = parse_budget_reports(session)
+    session.commit()
+
+    ib1, ib3 = new
+    assert ib1.parsed_json["skipped"]["duplicate_of"] == ib3.id
+    funds = session.scalars(select(FundLine)).all()
+    ksf = [f for f in funds if f.ledger == "KSF"]
+    assert {f.report_id for f in ksf} == {ib3.id} and {f.period for f in ksf} == {"2026-08"}
+    assert {f.ledger for f in funds} == {"KSF", "K33"}  # the fixture's K33 file too
+    assert summary.fund_lines == len(funds) > 0
+    assert {f.section for f in ksf} >= {"приходи", "разходи", "дейност"}
+    totals = [f for f in ksf if f.row_type == "activity_total"]
+    assert totals and all(t.programme_code and t.programme_name and t.name for t in totals)
+    # cash rows are those of the cash files only
+    assert {r.report_id for r in session.scalars(select(CashExecutionLine))} == {
+        reports[0].id, reports[2].id,
+    }
+    # idempotent
+    again = parse_budget_reports(session)
+    assert again.rows_deleted == 0
+    assert len(session.scalars(select(FundLine)).all()) == len(funds)
+
+    # backfill: touches only fund_lines, restores a wiped table
+    session.query(FundLine).delete()
+    done = backfill_fund_lines(session)
+    session.commit()
+    assert done["reports"] == 2 and len(session.scalars(select(FundLine)).all()) == len(funds)
+
+
+def test_europe_in_title_is_not_a_euro_marker():
+    """The EU-funds ledgers' title says "ЕВРОПЕЙСКИЯ СЪЮЗ"; that is not "евро"."""
+    import pandas as pd
+
+    df = pd.DataFrame([["ЗА СРЕДСТВАТА ОТ ЕВРОПЕЙСКИЯ СЪЮЗ - ДЕС", "(в лева)"]])
+    assert budget_b1._detect_original_currency(df, "2019-12") == "BGN"
+    assert budget_b1._detect_original_currency(pd.DataFrame([["(в евро)"]]), "2019-12") == "EUR"

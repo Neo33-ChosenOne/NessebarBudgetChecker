@@ -8,4 +8,7 @@ that module directly.
 
 from __future__ import annotations
 
-from nessebar_budget.db import budget_models  # noqa: F401
+from nessebar_budget.db import (
+    budget_models,  # noqa: F401
+    staff_models,  # noqa: F401
+)

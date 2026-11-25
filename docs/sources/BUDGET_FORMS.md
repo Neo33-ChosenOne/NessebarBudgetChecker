@@ -91,13 +91,31 @@ shares one schema:
 | 11 | ОТЧЕТ Общо (actual, total) |
 
 `parsers/budget_b1.py` locates every such header row (col1=="§§" AND
-col2=="под-§§"), and parses **only the first two** — "I. ПРИХОДИ..."
-(`section="приходи"`) and "II. РАЗХОДИ - РЕКАПИТУЛАЦИЯ..."
-(`section="разходи"`) — per the task's "main expenditure-by-paragraph
-table" scope. It records in its result's `skipped` list how many further
-pages existed (transfers §§3000-6900, loans, EU-funds/trust-fund
-sub-ledgers mirrored by the `IB1_*` siblings below, a functional/дейност
-breakdown) and does not parse them.
+col2=="под-§§") and parses:
+
+- the first two in full, "I. ПРИХОДИ..." (`section="приходи"`) and
+  "II. РАЗХОДИ - РЕКАПИТУЛАЦИЯ..." (`section="разходи"`), into
+  `cash_execution_lines`;
+- every "II.1. РАЗХОДИ ПО ДЕЙНОСТИ" page (46-47 of them, one per activity:
+  kindergartens, street cleaning, the municipal administration, ...), into
+  `cash_activity_lines`. Such a page repeats the expenditure table for one
+  activity. It opens, three rows under the header, with a row whose name
+  column reads "<------ ДЕЙНОСТ - код по ЕБК" and whose под-§§ column holds
+  the activity's 4-digit code (first digit = function, e.g. `3311` =
+  function 3 Образование, activity 311 Детски градини); the next row has the
+  code again and the name ("311 Детски градини"). Col 1 of the opening row
+  says "оп/дейност" only since the 2026 form, so the name-column text is
+  what the parser matches. The page ends at a total row with pseudo-code
+  "99-99" in the под-§§ column (no "ВСИЧКО" in col 1, unlike the main
+  tables). Each page lists all ~120 §§/под-§§ and most are zero, so only
+  rows with a plan or a paid amount are kept (about 700 per report), and
+  only the total columns (adjusted plan, actual), not the
+  държавни/местни/дофинансиране split. Verified on the 2019 `B3`, 2020 `B1`
+  and 2026 `B1` samples: the activities' totals add up to "ВСИЧКО РАЗХОДИ"
+  in each.
+
+The remaining two pages (III. transfers §§3000-6900, VI. financing/loans)
+are not parsed; the result's `skipped` list says how many there were.
 
 **`B3` (quarterly)**: `B3_YYYY_Q_5206.xls` / `IB3_*` share the exact same
 `OTCHET` schema as `B1`/`IB1_*` (confirmed on real 2019-2026 files, not
@@ -424,3 +442,66 @@ No cash month is missing from 2019-01 to 2026-08. Capital months missing
 from 2021-02 to 2026-08: 2022-01, 2023-01, 2023-02, 2023-06, 2023-12,
 2024-01, 2024-02, 2025-01, 2026-01. Before the fix, 2022-01 and 2023-01
 looked covered, but those files held December data.
+
+## 7. EU-funds and third-party-funds ledgers (`IB1_*` / `IB3_*`, table `fund_lines`)
+
+`IB1_YYYY_M_5206_<X>.xls` (monthly) and `IB3_YYYY_Q_5206_<X>.xls`
+(quarterly) are sibling ledgers of the cash report with the same `OTCHET`
+layout, so `parse_budget_b1` reads them unchanged: **DES, DMP, KSF, RA** are
+"сметки за средства от Европейския съюз" (form codes 96/97/98/42), **K33** is
+"сметки за чужди средства" (third-party funds; no revenue or expenditure,
+only the financing page and the `NALICHNOST` balances, which in K33 has a
+single total column instead of eight).
+
+* Currency: their title contains "ЕВРОПЕЙСКИЯ СЪЮЗ", which the old marker
+  regex took for "евро" (so 2019-2025 BGN files were left unconverted); the
+  regex now needs "евро" to end the word. Cash files are unaffected.
+* **KSF page shape.** Each "II.1. РАЗХОДИ ПО ДЕЙНОСТИ" page is a
+  programme-by-activity page. Below the header row `h` (`§§ / под-§§`) and
+  the `(1) (2)...` row (`h+1`): row `h+2` has the programme code in col 2 and
+  its name in col 3 (`98215`, `ЕФРР - ОП "Околна среда"`); `h+3` a
+  "ПЕРИОД 2014-2020" line in col 3 (and "оп/дейност" in col 1 since 2026);
+  `h+4` the activity code in col 2 and "122 Общинска администрация" in col
+  3; `h+5` the caption "(наименование на дейността)"; the §§ rows follow.
+  The parser anchors on the "ПЕРИОД" line. The same activity can appear
+  under several programmes, so rows are identified by
+  (`programme_code`, `activity_code`). `parse_budget_b1` activity rows have
+  `programme_code` (None on a plain B1/B3 page) and, on the total row,
+  `programme_name`.
+* **Table `fund_lines`** (`FundLine`): `report_id`, `period`, `ledger`
+  (DES/DMP/KSF/RA/K33), `section` (the six table sections, or "дейност"),
+  `paragraph`, `parent_paragraph`, `name`, `activity_code`,
+  `programme_code`, `programme_name`, `plan`, `actual` (EUR), `row_type`
+  (section_total / paragraph / subparagraph / balance / activity_total).
+  Only rows with money plus each table's total are stored.
+* **Pipeline.** `parse-budget` makes one family per ledger ("fund:KSF"...),
+  IB3 preferred over IB1 for the same period, with the same stale-row
+  cleanup as the cash family.
+* **Commands.** `parse-budget` (as above) and
+  `backfill-fund-lines`: for every ledger and period, parses the preferred
+  file *present on disk* and replaces that report's `fund_lines`; touches no
+  other table and lists the periods whose file is missing (a safe one-off
+  for a partial local cache).
+
+
+## Natural indicators (`Naturi_YYYY_5206.xls`, `NaturiPokazateli_2019_5206.xlsx`)
+
+The MinFin form "РАЗШИФРОВКА НА НАТУРАЛНИТЕ ПОКАЗАТЕЛИ ПО БЮДЖЕТА НА
+ОБЩИНИТЕ": posts (щатни бройки) and other head-counts (pedagogical staff,
+mayors, councillors, users of a service, ...) per activity, with the same
+state / local / co-financing split as the cash report. No pay amounts.
+Published for 2019, 2021 and 2023 as reports (`otcheti/`) and for 2024 and
+2026 as plans (`budget/`); nothing for the years between. Two layouts:
+the 2019 `.xlsx` (indicator codes like "01-00", activity blocks titled by
+name only) and the `.xls` form since 2021 (every row tagged with its level
+and the 4-digit activity code, indicator codes like 100/111/112/120).
+`parsers/naturi.py` reads both and normalises the codes; a file does not say
+whether it is a plan or a report, so that is decided from the folder it was
+published in. Imported by hand, once a year:
+
+    python -m nessebar_budget.cli import-natural-indicators <file> --url <where it was published>
+
+(newer years first: the 2019 form's activity names are matched against the
+names the newer files carry). Stored in `natural_indicators`
+(`db/staff_models.py`); the site reads it for `cash/staff.html` and the
+"Хора и числа" block of each activity page.

@@ -27,7 +27,12 @@ from typing import Any
 from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
-from nessebar_budget.db.budget_models import BudgetLineItem, CashExecutionLine
+from nessebar_budget.db.budget_models import (
+    BudgetLineItem,
+    CashActivityLine,
+    CashExecutionLine,
+    FundLine,
+)
 from nessebar_budget.db.models import BudgetReport
 from nessebar_budget.parsers.budget_b1 import detect_period as detect_cash_period
 from nessebar_budget.parsers.budget_b1 import parse_budget_b1
@@ -41,10 +46,15 @@ logger = logging.getLogger(__name__)
 CASH_KINDS: tuple[str, ...] = ("B1", "B3")
 CAPITAL_KIND = "capital_xlsx"
 #: BudgetReport kinds `parse_budget_reports` parses.
-PARSEABLE_KINDS: tuple[str, ...] = (*CASH_KINDS, CAPITAL_KIND)
+#: EU-funds (DES, DMP, KSF, RA) and third-party-funds (K33) ledgers: monthly
+#: IB1_<X> and quarterly IB3_<X>, one "fund:<X>" family per ledger.
+FUND_LEDGERS: tuple[str, ...] = ("DES", "DMP", "KSF", "RA", "K33")
+FUND_KINDS: tuple[str, ...] = tuple(f"IB{n}_{x}" for n in (1, 3) for x in FUND_LEDGERS)
+PARSEABLE_KINDS: tuple[str, ...] = (*CASH_KINDS, CAPITAL_KIND, *FUND_KINDS)
 
 FAMILY_CASH = "cash"
 FAMILY_CAPITAL = "capital"
+FAMILY_FUND_PREFIX = "fund:"
 
 #: `parsed_json["period_source"]` / `["kind_source"]` values.
 SOURCE_CONTENT = "content"
@@ -223,7 +233,10 @@ def upsert_cash_execution_lines(
 
 
 def report_family(kind: str | None) -> str | None:
-    """"cash" for B1/B3, "capital" for capital_xlsx, else None."""
+    """"cash" for B1/B3, "capital" for capital_xlsx, "fund:<LEDGER>" for
+    IB1_/IB3_ ledgers, else None."""
+    if kind in FUND_KINDS:
+        return FAMILY_FUND_PREFIX + kind.split("_", 1)[1]
     if kind in CASH_KINDS:
         return FAMILY_CASH
     if kind == CAPITAL_KIND:
@@ -248,6 +261,10 @@ class ReportCandidate:
     @property
     def family(self) -> str | None:
         return report_family(self.kind)
+
+
+def _is_fund(family: str | None) -> bool:
+    return bool(family) and family.startswith(FAMILY_FUND_PREFIX)
 
 
 def _capital_name_rank(filename: str) -> int:
@@ -279,6 +296,8 @@ def preference_key(candidate: ReportCandidate) -> tuple[Any, ...]:
     """
     if candidate.family == FAMILY_CASH:
         primary = 0 if candidate.kind == "B3" else 1
+    elif _is_fund(candidate.family):
+        primary = 0 if candidate.kind.startswith("IB3_") else 1
     else:
         primary = _capital_name_rank(candidate.filename)
     return (
@@ -293,6 +312,8 @@ def _preference_reason(winner: ReportCandidate, loser: ReportCandidate) -> str:
     """Human-readable reason `winner` was preferred over `loser`."""
     wk, lk = preference_key(winner), preference_key(loser)
     if wk[0] != lk[0]:
+        if _is_fund(winner.family):
+            return "the quarterly IB3 is preferred over the monthly IB1"
         if winner.family == FAMILY_CASH:
             return "the quarterly B3 (official quarterly report) is preferred over the monthly B1"
         return "a monthly-named file is preferred over a quarterly-named or unmarked one"
@@ -323,6 +344,8 @@ class ParseSummary:
     files_parsed: int = 0
     line_items: int = 0
     cash_lines: int = 0
+    activity_lines: int = 0
+    fund_lines: int = 0
     mismatches: int = 0
     skipped_duplicates: int = 0
     reclassified_other: int = 0
@@ -338,6 +361,8 @@ class ParseSummary:
             "files_parsed": self.files_parsed,
             "line_items": self.line_items,
             "cash_lines": self.cash_lines,
+            "activity_lines": self.activity_lines,
+            "fund_lines": self.fund_lines,
             "mismatches": self.mismatches,
             "skipped_duplicates": self.skipped_duplicates,
             "reclassified_other": self.reclassified_other,
@@ -380,8 +405,157 @@ def _refine_legacy_kinds(session: Session) -> int:
     return changed
 
 
-def _table_for(family: str) -> type[BudgetLineItem | CashExecutionLine]:
+def _table_for(family: str) -> type[BudgetLineItem | CashExecutionLine | FundLine]:
+    if _is_fund(family):
+        return FundLine
     return CashExecutionLine if family == FAMILY_CASH else BudgetLineItem
+
+
+def _tables_for(family: str) -> tuple[Any, ...]:
+    """Every table holding a family's parsed rows: a cash report's rows live
+    in two (the main tables, and the per-activity pages), and whatever makes
+    one stale makes the other stale too."""
+    if _is_fund(family):
+        return (FundLine,)
+    return (CashExecutionLine, CashActivityLine) if family == FAMILY_CASH else (BudgetLineItem,)
+
+
+def replace_cash_activity_lines(
+    session: Session, report_id: int, rows: list[dict[str, Any]]
+) -> int:
+    """Store a cash report's per-activity rows, replacing whatever that
+    report had before (they have no natural key worth diffing on). Returns
+    the number of rows stored."""
+    _delete(session, CashActivityLine, CashActivityLine.report_id == report_id)
+    # programme_* belong to fund ledgers (`fund_lines`); the cash table has no such columns.
+    session.add_all(
+        CashActivityLine(
+            report_id=report_id,
+            **{k: v for k, v in row.items() if not k.startswith("programme_")},
+        )
+        for row in rows
+    )
+    return len(rows)
+
+
+def fund_rows(result: dict[str, Any], ledger: str) -> list[dict[str, Any]]:
+    """`parse_budget_b1` output -> `FundLine` rows: only rows that carry
+    money (plan or actual non-zero) plus each table's total row."""
+    out: list[dict[str, Any]] = []
+    for row in result["rows"]:
+        extra = row["extra_json"]
+        plan, actual = row["plan_adjusted"], row["actual_ytd"]
+        if not (plan or actual or extra.get("row_type") == "section_total"):
+            continue
+        out.append(
+            {
+                "period": row["period"], "ledger": ledger, "section": row["section"],
+                "paragraph": row["paragraph"], "parent_paragraph": extra.get("parent_paragraph"),
+                "name": row["name"], "plan": plan, "actual": actual,
+                "row_type": extra.get("row_type"),
+            }
+        )
+    for row in result["activities"]:  # already money-only
+        total = row["paragraph"] == "99-99"
+        out.append(
+            {
+                "period": row["period"], "ledger": ledger, "section": "дейност",
+                "paragraph": row["paragraph"], "parent_paragraph": row["parent_paragraph"],
+                "name": row["activity_name"], "activity_code": row["activity_code"],
+                "programme_code": row["programme_code"], "programme_name": row["programme_name"],
+                "plan": row["plan"], "actual": row["actual"],
+                "row_type": "activity_total" if total
+                else ("subparagraph" if row["parent_paragraph"] else "paragraph"),
+            }
+        )
+    return out
+
+
+def replace_fund_lines(
+    session: Session, report_id: int, ledger: str, result: dict[str, Any]
+) -> int:
+    """Store a fund report's rows, replacing whatever that report had."""
+    rows = fund_rows(result, ledger)
+    _delete(session, FundLine, FundLine.report_id == report_id)
+    session.add_all(FundLine(report_id=report_id, **row) for row in rows)
+    return len(rows)
+
+
+def _fund_ledger(kind: str | None) -> str:
+    return (kind or "").split("_", 1)[-1]
+
+
+def backfill_fund_lines(session: Session) -> dict[str, Any]:
+    """Fill `fund_lines` from the fund report files on disk: per (ledger,
+    period) the preferred file among those present (IB3 over IB1) is parsed
+    and its rows replaced. Never re-ranks reports, never touches another
+    table, so it is safe with a partial local cache; periods with no file
+    on disk are listed under "missing". Does not commit."""
+    reports = session.scalars(
+        select(BudgetReport).where(BudgetReport.kind.in_(FUND_KINDS)).order_by(BudgetReport.id)
+    ).all()
+    present: list[ReportCandidate] = []
+    missing: list[str] = []
+    for report in reports:
+        path = Path(report.file_path) if report.file_path else None
+        if path is None or not path.exists():
+            missing.append(f"{report.kind} {report.period}: {report.file_path or f'report #{report.id}'}")
+            continue
+        present.append(
+            ReportCandidate(
+                report.id, report.kind or "", str(path), report.period, path.stat().st_mtime
+            )
+        )
+    done = stored = 0
+    for ranked in group_candidates(present).values():
+        cand = ranked[0]
+        ledger = _fund_ledger(cand.kind)
+        result = parse_budget_b1(cand.file_path, period=cand.period)
+        # the winner owns this ledger+period: drop other reports' rows there
+        _delete(
+            session, FundLine, FundLine.ledger == ledger, FundLine.period == cand.period,
+            FundLine.report_id != cand.report_id,
+        )
+        stored += replace_fund_lines(session, cand.report_id, ledger, result)
+        done += 1
+    session.flush()
+    return {"reports": done, "rows": stored, "missing": missing}
+
+
+#: Sections of a cash report parsed since the per-activity pages were added.
+LATER_CASH_SECTIONS = ("трансфери", "временни заеми", "финансиране", "наличности")
+
+
+def backfill_cash_pages(session: Session) -> dict[str, Any]:
+    """For every period that already has cash rows, read the pages of the
+    same report file that older versions skipped: the per-activity pages
+    (`cash_activity_lines`) and the transfers and financing tables (added to
+    `cash_execution_lines` under their own `section`). For a database that
+    pre-dates them. Unlike `parse_budget_reports`, this never re-ranks files
+    and never touches the revenue/expenditure rows, so it is safe with a
+    partial local cache (a file that is not on disk is listed under
+    "missing" and its period simply stays without the new rows). Does not
+    commit."""
+    reports = session.scalars(
+        select(BudgetReport)
+        .where(BudgetReport.id.in_(select(CashExecutionLine.report_id).distinct()))
+        .order_by(BudgetReport.period)
+    ).all()
+    done = 0
+    stored = 0
+    missing: list[str] = []
+    for report in reports:
+        path = Path(report.file_path) if report.file_path else None
+        if path is None or not path.exists():
+            missing.append(f"{report.period}: {report.file_path or f'report #{report.id}'}")
+            continue
+        result = parse_budget_b1(path, period=report.period)
+        stored += replace_cash_activity_lines(session, report.id, result["activities"])
+        later = [row for row in result["rows"] if row["section"] in LATER_CASH_SECTIONS]
+        stored += sum(upsert_cash_execution_lines(session, report.id, later))
+        done += 1
+    session.flush()
+    return {"reports": done, "rows": stored, "missing": missing}
 
 
 def _delete(session: Session, table: Any, *conditions: Any) -> int:
@@ -425,6 +599,8 @@ def parse_budget_reports(
         summary.rows_deleted += _delete(
             session, CashExecutionLine, CashExecutionLine.id.isnot(None)
         )
+        summary.rows_deleted += _delete(session, CashActivityLine, CashActivityLine.id.isnot(None))
+        summary.rows_deleted += _delete(session, FundLine, FundLine.id.isnot(None))
 
     # Rows whose report isn't (any longer) a kind of their table's family.
     cash_ids = select(BudgetReport.id).where(BudgetReport.kind.in_(CASH_KINDS))
@@ -433,7 +609,16 @@ def parse_budget_reports(
         session, CashExecutionLine, CashExecutionLine.report_id.not_in(cash_ids)
     )
     summary.rows_deleted += _delete(
+        session, CashActivityLine, CashActivityLine.report_id.not_in(cash_ids)
+    )
+    summary.rows_deleted += _delete(
         session, BudgetLineItem, BudgetLineItem.report_id.not_in(capital_ids)
+    )
+
+    summary.rows_deleted += _delete(
+        session, FundLine, FundLine.report_id.not_in(
+            select(BudgetReport.id).where(BudgetReport.kind.in_(FUND_KINDS))
+        )
     )
 
     reports = session.scalars(
@@ -454,7 +639,9 @@ def parse_budget_reports(
                 (report.file_path or f"report #{report.id}", "file missing on disk")
             )
             continue
-        detector = detect_cash_period if report.kind in CASH_KINDS else detect_capital_period
+        detector = (
+            detect_cash_period if report.kind in (*CASH_KINDS, *FUND_KINDS) else detect_capital_period
+        )
         detected = detector(path)
         meta[report.id] = {
             "period_source": SOURCE_CONTENT if detected else SOURCE_SCRAPER,
@@ -480,6 +667,7 @@ def parse_budget_reports(
 
     for (family, _group_key), ranked in sorted(groups.items()):
         table = _table_for(family)
+        tables = _tables_for(family)
         winner: ReportCandidate | None = None
         for cand in ranked:
             report = by_id[cand.report_id]
@@ -499,7 +687,8 @@ def parse_budget_reports(
                         f"#{winner.report_id}; {reason}",
                     },
                 }
-                summary.rows_deleted += _delete(session, table, table.report_id == cand.report_id)
+                for t in tables:
+                    summary.rows_deleted += _delete(session, t, t.report_id == cand.report_id)
                 summary.skipped_duplicates += 1
                 summary.duplicates.append(
                     {
@@ -540,15 +729,18 @@ def parse_budget_reports(
             winner = cand
             # This (family, period) now belongs to this report alone, and
             # this report's rows only to this period.
-            summary.rows_deleted += _delete(
-                session, table, table.period == cand.period, table.report_id != cand.report_id
-            )
-            summary.rows_deleted += _delete(
-                session,
-                table,
-                table.report_id == cand.report_id,
-                or_(table.period != cand.period, table.period.is_(None)),
-            )
+            for t in tables:
+                # fund tables hold all five ledgers: scope to this report's own
+                scope = (FundLine.ledger == _fund_ledger(cand.kind),) if t is FundLine else ()
+                summary.rows_deleted += _delete(
+                    session, t, t.period == cand.period, t.report_id != cand.report_id, *scope
+                )
+                summary.rows_deleted += _delete(
+                    session,
+                    t,
+                    t.report_id == cand.report_id,
+                    or_(t.period != cand.period, t.period.is_(None)),
+                )
             if family == FAMILY_CAPITAL:
                 inserted, updated = upsert_budget_line_items(session, cand.report_id, result["rows"])
                 summary.line_items += inserted + updated
@@ -558,11 +750,23 @@ def parse_budget_reports(
                     "row_count": len(result["rows"]),
                     "mismatches": result["mismatches"],
                 }
+            elif _is_fund(family):
+                summary.fund_lines += replace_fund_lines(
+                    session, cand.report_id, _fund_ledger(cand.kind), result
+                )
+                report.parsed_json = {
+                    **base,
+                    "row_count": len(result["rows"]),
+                    "unparsed_pages": result["skipped"],
+                }
             else:
                 inserted, updated = upsert_cash_execution_lines(
                     session, cand.report_id, result["rows"]
                 )
                 summary.cash_lines += inserted + updated
+                summary.activity_lines += replace_cash_activity_lines(
+                    session, cand.report_id, result["activities"]
+                )
                 report.parsed_json = {
                     **base,
                     "row_count": len(result["rows"]),
